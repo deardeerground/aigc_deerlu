@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.Huoyejia" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">@color/seed_navy</item>
+    </style>
+</resources>
