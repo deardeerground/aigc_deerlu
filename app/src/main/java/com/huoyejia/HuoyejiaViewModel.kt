@@ -121,6 +121,22 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
 
     fun noteById(noteId: String): NoteEntity? = notes.value.firstOrNull { it.noteId == noteId }
 
+    fun deleteNote(noteId: String) {
+        viewModelScope.launch {
+            container.relationRepository.deleteForNote(noteId)
+            container.reviewCardRepository.deleteForNote(noteId)
+            container.noteRepository.deleteNote(noteId)
+            refreshStats()
+            if (_explainState.value.selectedNoteId == noteId) {
+                _explainState.value = _explainState.value.copy(
+                    selectedNoteId = notes.value.firstOrNull { it.noteId != noteId }?.noteId,
+                    pack = null,
+                    errorMessage = null
+                )
+            }
+        }
+    }
+
     fun selectExplainNote(noteId: String) {
         _explainState.value = _explainState.value.copy(
             selectedNoteId = noteId,

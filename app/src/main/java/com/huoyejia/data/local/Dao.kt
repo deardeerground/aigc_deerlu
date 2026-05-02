@@ -26,6 +26,9 @@ interface NoteDao {
     @Query("UPDATE notes SET reviewed_count = reviewed_count + 1, read_status = 1 WHERE note_id = :noteId")
     suspend fun markReviewed(noteId: String)
 
+    @Query("DELETE FROM notes WHERE note_id = :noteId")
+    suspend fun deleteNote(noteId: String)
+
     @Query(
         """
         SELECT notes.*, note_embeddings.vector_blob AS vector_blob
@@ -40,6 +43,9 @@ interface NoteDao {
 interface EmbeddingDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(embedding: NoteEmbeddingEntity)
+
+    @Query("DELETE FROM note_embeddings WHERE note_id = :noteId")
+    suspend fun deleteForNote(noteId: String)
 }
 
 @Dao
@@ -58,6 +64,9 @@ interface RelationDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(relations: List<NoteRelationEntity>)
+
+    @Query("DELETE FROM note_relations WHERE note_id_from = :noteId OR note_id_to = :noteId")
+    suspend fun deleteForNote(noteId: String)
 }
 
 @Dao
@@ -70,6 +79,9 @@ interface ReviewCardDao {
 
     @Query("UPDATE review_cards SET status = 'DONE', reviewed_at = :reviewedAt WHERE card_id = :cardId")
     suspend fun markDone(cardId: String, reviewedAt: Long)
+
+    @Query("DELETE FROM review_cards WHERE note_id = :noteId")
+    suspend fun deleteForNote(noteId: String)
 }
 
 @Dao

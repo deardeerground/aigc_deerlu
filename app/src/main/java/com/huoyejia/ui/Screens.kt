@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
 package com.huoyejia.ui
 
@@ -9,7 +9,9 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,11 +77,13 @@ fun InboxScreen(
     cards: List<ReviewCardEntity>,
     stats: UserStatsEntity?,
     onOpenNote: (String) -> Unit,
+    onDeleteNote: (String) -> Unit,
     onAddDemo: () -> Unit,
     onStartReview: () -> Unit
 ) {
     val todayNotes = notes.filter { it.createdAt.isToday() }
     val todayReviewed = todayNotes.count { it.reviewedCount > 0 }
+    var pendingDelete by remember { mutableStateOf<NoteEntity?>(null) }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -118,9 +122,20 @@ fun InboxScreen(
                 relationCount = relations.count { it.noteIdFrom == note.noteId || it.noteIdTo == note.noteId },
                 duplicateCount = relations.duplicateCountFor(note.noteId),
                 onClick = { onOpenNote(note.noteId) },
+                onLongClick = { pendingDelete = note },
                 onStartReview = onStartReview
             )
         }
+    }
+    pendingDelete?.let { note ->
+        DeleteNoteDialog(
+            noteTitle = note.sourceTitle,
+            onDismiss = { pendingDelete = null },
+            onConfirm = {
+                onDeleteNote(note.noteId)
+                pendingDelete = null
+            }
+        )
     }
 }
 
@@ -277,9 +292,11 @@ fun ReviewScreen(
 fun HistoryScreen(
     notes: List<NoteEntity>,
     cards: List<ReviewCardEntity>,
-    onOpenNote: (String) -> Unit
+    onOpenNote: (String) -> Unit,
+    onDeleteNote: (String) -> Unit
 ) {
     var query by remember { mutableStateOf("") }
+    var pendingDelete by remember { mutableStateOf<NoteEntity?>(null) }
     val reviewedNoteIds = cards.filter { it.status == "DONE" }.map { it.noteId }.toSet()
     val reviewedNotes = notes
         .filter { it.reviewedCount > 0 || it.noteId in reviewedNoteIds || it.readStatus }
@@ -336,10 +353,21 @@ fun HistoryScreen(
                 TagHistorySection(
                     group = group,
                     cards = cards,
-                    onOpenNote = onOpenNote
+                    onOpenNote = onOpenNote,
+                    onDeleteNote = { pendingDelete = it }
                 )
             }
         }
+    }
+    pendingDelete?.let { note ->
+        DeleteNoteDialog(
+            noteTitle = note.sourceTitle,
+            onDismiss = { pendingDelete = null },
+            onConfirm = {
+                onDeleteNote(note.noteId)
+                pendingDelete = null
+            }
+        )
     }
 }
 
@@ -620,6 +648,25 @@ private fun shareFile(context: android.content.Context, path: String, mimeType: 
     context.startActivity(Intent.createChooser(intent, title))
 }
 
+@Composable
+private fun DeleteNoteDialog(
+    noteTitle: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("删除知识点") },
+        text = { Text("确定删除「$noteTitle」吗？相关的复习卡、关联关系和向量也会一起清理。") },
+        confirmButton = {
+            Button(onClick = onConfirm) { Text("删除") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
+}
+
 private data class TagHistoryGroup(
     val tag: String,
     val notes: List<NoteEntity>
@@ -629,7 +676,8 @@ private data class TagHistoryGroup(
 private fun TagHistorySection(
     group: TagHistoryGroup,
     cards: List<ReviewCardEntity>,
-    onOpenNote: (String) -> Unit
+    onOpenNote: (String) -> Unit,
+    onDeleteNote: (NoteEntity) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -646,7 +694,10 @@ private fun TagHistorySection(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onOpenNote(note.noteId) },
+                        .combinedClickable(
+                            onClick = { onOpenNote(note.noteId) },
+                            onLongClick = { onDeleteNote(note) }
+                        ),
                     shape = RoundedCornerShape(16.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
                 ) {
@@ -747,12 +798,16 @@ private fun NoteCard(
     relationCount: Int,
     duplicateCount: Int,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onStartReview: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {

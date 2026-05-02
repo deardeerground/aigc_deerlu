@@ -31,6 +31,11 @@ class NoteRepository(
 
     suspend fun saveEmbedding(embedding: NoteEmbeddingEntity) = embeddingDao.upsert(embedding)
 
+    suspend fun deleteNote(noteId: String) {
+        embeddingDao.deleteForNote(noteId)
+        noteDao.deleteNote(noteId)
+    }
+
     suspend fun loadWithEmbeddings(excludeNoteId: String = ""): List<NoteWithEmbedding> {
         return noteDao.loadWithEmbeddings(excludeNoteId)
     }
@@ -42,6 +47,8 @@ class RelationRepository(private val dao: RelationDao) {
     suspend fun getForNote(noteId: String): List<NoteRelationEntity> = dao.getForNote(noteId)
 
     suspend fun upsertAll(relations: List<NoteRelationEntity>) = dao.upsertAll(relations)
+
+    suspend fun deleteForNote(noteId: String) = dao.deleteForNote(noteId)
 }
 
 class ReviewCardRepository(private val dao: ReviewCardDao) {
@@ -50,6 +57,8 @@ class ReviewCardRepository(private val dao: ReviewCardDao) {
     suspend fun upsert(card: ReviewCardEntity) = dao.upsert(card)
 
     suspend fun markDone(cardId: String) = dao.markDone(cardId, System.currentTimeMillis())
+
+    suspend fun deleteForNote(noteId: String) = dao.deleteForNote(noteId)
 }
 
 class StatsRepository(private val dao: StatsDao) {

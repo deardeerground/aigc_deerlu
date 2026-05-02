@@ -49,6 +49,7 @@ class MainActivity : ComponentActivity() {
                                 cards = cards,
                                 stats = stats,
                                 onOpenNote = { navController.navigate("detail/$it") },
+                                onDeleteNote = viewModel::deleteNote,
                                 onAddDemo = viewModel::addDemoLinkedNote,
                                 onStartReview = { navController.navigate("review") }
                             )
@@ -78,7 +79,8 @@ class MainActivity : ComponentActivity() {
                             HistoryScreen(
                                 notes = notes,
                                 cards = cards,
-                                onOpenNote = { navController.navigate("detail/$it") }
+                                onOpenNote = { navController.navigate("detail/$it") },
+                                onDeleteNote = viewModel::deleteNote
                             )
                         }
                         composable("explain") {
