@@ -3,6 +3,9 @@
 package com.huoyejia.ui
 
 import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -23,9 +26,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -66,6 +71,7 @@ import com.huoyejia.domain.ExplainPack
 import com.huoyejia.domain.ScoredNote
 import com.huoyejia.util.JsonText
 import java.io.File
+import java.util.UUID
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -141,97 +147,298 @@ fun InboxScreen(
 
 @Composable
 fun CaptureScreen(
-    onSaveText: (String, String, String) -> Unit,
+    onSaveText: (String, String, String, String?, String?) -> Unit,
     onMockScreenshot: () -> Unit,
-    onOpenFloatingCapture: () -> Unit
+    onOpenFloatingCapture: () -> Unit,
+    pendingCaptureTitle: String? = null,
+    pendingCaptureText: String? = null,
+    pendingCaptureUrl: String? = null,
+    pendingCaptureShowFolderPicker: Boolean = false,
+    pendingCaptureRequestId: Long? = null,
+    onPendingCaptureConsumed: () -> Unit = {}
 ) {
-    var title by remember { mutableStateOf("手动粘贴：新材料") }
-    var text by remember {
-        mutableStateOf("二战爆发不仅是单一事件，而是经济危机、凡尔赛体系和绥靖政策共同作用的结果。")
+    val context = LocalContext.current
+    var title by remember { mutableStateOf("\u672a\u547d\u540d\u5b66\u4e60\u6750\u6599") }
+    var text by remember { mutableStateOf("") }
+    var url by remember { mutableStateOf("") }
+    var screenshotUri by remember { mutableStateOf<String?>(null) }
+    var showFolderPicker by remember { mutableStateOf(false) }
+    var folders by remember { mutableStateOf(loadCaptureFolders(context)) }
+    val screenshotPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        screenshotUri = copyImageToCaptureStorage(context, uri) ?: uri.toString()
     }
-    var sourceType by remember { mutableStateOf("manual") }
-    var selectedTag by remember { mutableStateOf("二战") }
-    var reflection by remember { mutableStateOf("补充旧笔记") }
-    var showPasteDialog by remember { mutableStateOf(false) }
-    val sourceTypes = listOf("manual", "web", "wechat", "pdf", "bilibili")
-    val recommendedTags = captureTagSuggestions(text)
+
+    LaunchedEffect(pendingCaptureRequestId, pendingCaptureText, pendingCaptureUrl, pendingCaptureShowFolderPicker) {
+        val incomingText = pendingCaptureText.orEmpty()
+        val incomingUrl = pendingCaptureUrl.orEmpty()
+        if (incomingText.isNotBlank() || incomingUrl.isNotBlank()) {
+            title = pendingCaptureTitle?.takeIf { it.isNotBlank() } ?: "\u60ac\u6d6e\u7a97\u91c7\u96c6"
+            text = incomingText
+            url = incomingUrl
+            showFolderPicker = pendingCaptureShowFolderPicker
+            onPendingCaptureConsumed()
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp, vertical = 24.dp),
+            .padding(horizontal = 18.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        SectionTitle("快速采集")
-        Button(onClick = onOpenFloatingCapture, modifier = Modifier.fillMaxWidth()) {
-            Text("开启悬浮窗模式")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                SectionTitle("\u5feb\u901f\u91c7\u96c6")
+                TinyText("\u5148\u6574\u7406\u6750\u6599\uff0c\u518d\u9009\u62e9\u6536\u85cf\u5939\u5e76\u4ea4\u7ed9 AI \u603b\u7ed3\u3002")
+            }
+            Button(
+                onClick = onOpenFloatingCapture,
+                modifier = Modifier.size(54.dp),
+                shape = CircleShape,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+            ) {
+                Text("\u6d6e", fontWeight = FontWeight.Black)
+            }
         }
-        OutlinedButton(onClick = { showPasteDialog = true }, modifier = Modifier.fillMaxWidth()) {
-            Text("App 内快速粘贴")
-        }
-        OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("来源标题") }, modifier = Modifier.fillMaxWidth())
+
+        OutlinedTextField(
+            value = title,
+            onValueChange = { title = it },
+            label = { Text("\u6807\u9898") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+
         OutlinedTextField(
             value = text,
             onValueChange = { text = it },
-            label = { Text("分享文本 / 粘贴内容") },
-            minLines = 6,
+            label = { Text("\u7c98\u8d34\u5b66\u4e60\u5185\u5bb9 / \u6587\u7ae0\u6b63\u6587") },
+            minLines = 8,
             modifier = Modifier.fillMaxWidth()
         )
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            sourceTypes.forEach { type ->
-                FilterChip(
-                    selected = sourceType == type,
-                    onClick = { sourceType = type },
-                    label = { Text(type) }
-                )
-            }
-        }
-        AssistCard("采集前轻确认", "不要无脑收藏。先选一个 AI 推荐标签，并说明这条内容准备用来做什么。")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            recommendedTags.forEach { tag ->
-                FilterChip(
-                    selected = selectedTag == tag,
-                    onClick = { selectedTag = tag },
-                    label = { Text(tag) }
-                )
-            }
-        }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("复习考点", "补充旧笔记", "找反例").forEach { option ->
-                FilterChip(
-                    selected = reflection == option,
-                    onClick = { reflection = option },
-                    label = { Text(option) }
-                )
-            }
-        }
-        Button(
-            onClick = {
-                val guidedText = "采集时选择标签：$selectedTag\n采集目的：$reflection\n$text"
-                onSaveText(title, guidedText, sourceType)
-            },
+
+        CaptureActionCard(
+            title = if (screenshotUri != null) "\u622a\u56fe\u5df2\u52a0\u5165" else "\u52a0\u5165\u622a\u56fe",
+            body = screenshotUri?.let { "\u5df2\u9009\u62e9\u672c\u5730\u56fe\u7247\uff1a${it.take(42)}..." } ?: "\u70b9\u51fb\u4ece\u672c\u5730\u76f8\u518c/\u622a\u56fe\u76f8\u518c\u4e2d\u9009\u62e9\u56fe\u7247\uff0cApp \u4f1a\u590d\u5236\u4e00\u4efd\u7528\u4e8e OCR\u3002",
+            action = if (screenshotUri != null) "\u91cd\u65b0\u9009\u62e9" else "\u9009\u62e9\u622a\u56fe",
+            onClick = { screenshotPicker.launch("image/*") }
+        )
+
+        OutlinedTextField(
+            value = url,
+            onValueChange = { url = it },
+            label = { Text("\u7c98\u8d34\u7f51\u5740\uff0c\u53ef\u9009") },
+            singleLine = true,
             modifier = Modifier.fillMaxWidth()
+        )
+
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = text.isNotBlank() || url.isNotBlank() || screenshotUri != null) { showFolderPicker = true },
+            shape = RoundedCornerShape(26.dp),
+            color = MaterialTheme.colorScheme.primary,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f))
         ) {
-            Text("存入活页夹并自动处理")
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("\u5b58\u5165\u6d3b\u9875\u5939 + AI\u603b\u7ed3", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                Text(
+                    "\u9009\u62e9\u6536\u85cf\u5939\u540e\u4fdd\u5b58\uff0c\u7cfb\u7edf\u4f1a\u7ee7\u7eed\u6267\u884c\u6e05\u6d17\u3001\u6458\u8981\u3001\u6807\u7b7e\u3001\u5173\u8054\u65e7\u7b14\u8bb0\u548c\u590d\u4e60\u5361\u751f\u6210\u3002",
+                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.84f),
+                    lineHeight = 20.sp
+                )
+            }
         }
-        OutlinedButton(onClick = onMockScreenshot, modifier = Modifier.fillMaxWidth()) {
-            Text("模拟截图导入 + OCR")
-        }
-        AssistCard("闭环说明", "保存后会立即执行：清洗内容 -> Mock BlueLM 摘要标签 -> embedding 召回旧笔记 -> 生成关联和回流卡。")
     }
-    if (showPasteDialog) {
-        QuickPasteDialog(
-            onDismiss = { showPasteDialog = false },
-            onSubmit = { pastedTitle, pastedContent ->
-                val isLink = pastedContent.startsWith("http://") || pastedContent.startsWith("https://")
-                val resolvedTitle = pastedTitle.ifBlank { if (isLink) "链接学习总结" else "弹窗粘贴：学习材料" }
-                val content = if (isLink) "学习链接：$pastedContent\n请总结这个链接对应的核心内容、结构和可复习问题。" else pastedContent
-                onSaveText(resolvedTitle, content, if (isLink) "web" else "manual")
-                showPasteDialog = false
+
+    if (showFolderPicker) {
+        FolderPickerDialog(
+            folders = folders,
+            onCreateFolder = { name ->
+                folders = saveCaptureFolders(context, folders + name)
+            },
+            onDismiss = { showFolderPicker = false },
+            onConfirm = { folder ->
+                val resolvedUrl = url.trim()
+                val resolvedText = buildCapturePayload(
+                    folder = folder,
+                    title = title,
+                    text = text,
+                    url = resolvedUrl,
+                    imagePath = screenshotUri
+                )
+                val sourceType = when {
+                    resolvedUrl.startsWith("http://") || resolvedUrl.startsWith("https://") -> "web"
+                    screenshotUri != null -> "image"
+                    else -> "manual"
+                }
+                onSaveText(title.ifBlank { "\u672a\u547d\u540d\u5b66\u4e60\u6750\u6599" }, resolvedText, sourceType, resolvedUrl.ifBlank { null }, screenshotUri)
+                showFolderPicker = false
             }
         )
     }
+}
+
+@Composable
+private fun CaptureActionCard(
+    title: String,
+    body: String,
+    action: String,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f))
+    ) {
+        Row(
+            modifier = Modifier.padding(15.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                Text(body, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.76f), lineHeight = 18.sp)
+            }
+            OutlinedButton(onClick = onClick) { Text(action) }
+        }
+    }
+}
+
+@Composable
+private fun FolderPickerDialog(
+    folders: List<String>,
+    onCreateFolder: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var selectedFolder by remember(folders) { mutableStateOf(folders.firstOrNull().orEmpty()) }
+    var creating by remember { mutableStateOf(false) }
+    var newFolderName by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("\u9009\u62e9\u6536\u85cf\u5939", modifier = Modifier.weight(1f), fontWeight = FontWeight.Black)
+                Button(
+                    onClick = { creating = true },
+                    modifier = Modifier.size(42.dp),
+                    shape = CircleShape,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                ) { Text("+") }
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (creating) {
+                    OutlinedTextField(
+                        value = newFolderName,
+                        onValueChange = { newFolderName = it },
+                        label = { Text("\u65b0\u5efa\u6536\u85cf\u5939\u540d\u79f0") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                val clean = newFolderName.trim()
+                                if (clean.isNotBlank()) {
+                                    onCreateFolder(clean)
+                                    selectedFolder = clean
+                                    newFolderName = ""
+                                    creating = false
+                                }
+                            },
+                            enabled = newFolderName.isNotBlank()
+                        ) { Text("\u6dfb\u52a0") }
+                        TextButton(onClick = { creating = false }) { Text("\u53d6\u6d88\u65b0\u5efa") }
+                    }
+                }
+                folders.forEach { folder ->
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedFolder = folder },
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (selectedFolder == folder) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, if (selectedFolder == folder) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
+                    ) {
+                        Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(folder, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                            if (selectedFolder == folder) Text("\u5df2\u9009", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(selectedFolder) }, enabled = selectedFolder.isNotBlank()) { Text("\u786e\u8ba4") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("\u53d6\u6d88") }
+        }
+    )
+}
+
+private fun buildCapturePayload(
+    folder: String,
+    title: String,
+    text: String,
+    url: String,
+    imagePath: String?
+): String {
+    return buildString {
+        appendLine("\u6536\u85cf\u5939\uff1a$folder")
+        appendLine("\u6807\u9898\uff1a${title.ifBlank { "\u672a\u547d\u540d\u5b66\u4e60\u6750\u6599" }}")
+        if (text.isNotBlank()) {
+            appendLine()
+            appendLine("\u5b66\u4e60\u5185\u5bb9\uff1a")
+            appendLine(text.trim())
+        }
+        if (url.isNotBlank()) {
+            appendLine()
+            appendLine("\u5b66\u4e60\u7f51\u5740\uff1a$url")
+            appendLine("\u8bf7\u7ed3\u5408\u7f51\u5740\u5185\u5bb9\u751f\u6210\u6838\u5fc3\u6458\u8981\u3001\u7ed3\u6784\u5316\u8981\u70b9\u548c\u53ef\u590d\u4e60\u95ee\u9898\u3002")
+        }
+        if (!imagePath.isNullOrBlank()) {
+            appendLine()
+            appendLine("\u622a\u56fe\uff1a\u5df2\u6dfb\u52a0\u672c\u5730\u56fe\u7247 $imagePath\uff0c\u8bf7\u5728\u603b\u7ed3\u65f6\u7ed3\u5408\u622a\u56fe\u7ebf\u7d22\u3002")
+        }
+    }
+}
+
+private fun loadCaptureFolders(context: android.content.Context): List<String> {
+    val raw = context.getSharedPreferences("capture_folders", android.content.Context.MODE_PRIVATE)
+        .getString("folders", null)
+    return raw?.split("||")?.filter { it.isNotBlank() }?.distinct().orEmpty().ifEmpty {
+        listOf("\u9ed8\u8ba4\u6536\u85cf\u5939", "\u8bfe\u7a0b\u590d\u4e60", "\u8bba\u6587\u8d44\u6599", "\u7075\u611f\u7d20\u6750")
+    }
+}
+
+private fun saveCaptureFolders(context: android.content.Context, folders: List<String>): List<String> {
+    val clean = folders.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+    context.getSharedPreferences("capture_folders", android.content.Context.MODE_PRIVATE)
+        .edit()
+        .putString("folders", clean.joinToString("||"))
+        .apply()
+    return clean
+}
+
+private fun copyImageToCaptureStorage(context: android.content.Context, uri: Uri): String? {
+    return runCatching {
+        val dir = File(context.filesDir, "capture_images").apply { mkdirs() }
+        val file = File(dir, "capture_${System.currentTimeMillis()}_${UUID.randomUUID()}.jpg")
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            file.outputStream().use { output -> input.copyTo(output) }
+        } ?: return null
+        file.absolutePath
+    }.getOrNull()
 }
 
 @Composable

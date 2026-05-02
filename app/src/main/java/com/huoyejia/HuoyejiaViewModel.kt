@@ -75,6 +75,28 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun addCaptureNote(
+        title: String,
+        text: String,
+        sourceType: String = "manual",
+        url: String? = null,
+        imagePath: String? = null
+    ) {
+        if (text.isBlank() && url.isNullOrBlank() && imagePath.isNullOrBlank()) return
+        viewModelScope.launch {
+            _isBusy.value = true
+            container.processor.captureAndProcess(
+                rawText = text,
+                imagePath = imagePath,
+                sourceType = sourceType,
+                sourceTitle = title.ifBlank { "手动粘贴" },
+                url = url
+            )
+            refreshStats()
+            _isBusy.value = false
+        }
+    }
+
     fun addDemoLinkedNote() {
         viewModelScope.launch {
             _isBusy.value = true

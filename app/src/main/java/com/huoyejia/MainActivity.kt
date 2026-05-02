@@ -6,8 +6,11 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -26,12 +29,19 @@ import com.huoyejia.ui.SearchScreen
 import com.huoyejia.ui.theme.HuoyejiaTheme
 
 class MainActivity : ComponentActivity() {
+    private var pendingCapture by mutableStateOf<PendingCapture?>(null)
+    private var openCaptureRequested by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingCapture = intent.toPendingCapture()
+        openCaptureRequested = intent.getBooleanExtra(EXTRA_NAV_CAPTURE, false)
         setContent {
             HuoyejiaTheme {
                 val viewModel: HuoyejiaViewModel = viewModel()
                 val navController = rememberNavController()
+                val pending = pendingCapture
+                val shouldOpenCapture = pending != null || openCaptureRequested
                 val notes by viewModel.notes.collectAsState()
                 val relations by viewModel.relations.collectAsState()
                 val cards by viewModel.cards.collectAsState()
@@ -40,8 +50,14 @@ class MainActivity : ComponentActivity() {
                 val explainState by viewModel.explainState.collectAsState()
                 val isBusy by viewModel.isBusy.collectAsState()
 
+                LaunchedEffect(shouldOpenCapture) {
+                    if (shouldOpenCapture) {
+                        navController.navigate("capture") { launchSingleTop = true }
+                    }
+                }
+
                 HuoyejiaScaffold(navController = navController, isBusy = isBusy) {
-                    NavHost(navController = navController, startDestination = "inbox") {
+                    NavHost(navController = navController, startDestination = if (shouldOpenCapture) "capture" else "inbox") {
                         composable("inbox") {
                             InboxScreen(
                                 notes = notes,
@@ -56,9 +72,18 @@ class MainActivity : ComponentActivity() {
                         }
                         composable("capture") {
                             CaptureScreen(
-                                onSaveText = viewModel::addManualNote,
+                                onSaveText = viewModel::addCaptureNote,
                                 onMockScreenshot = viewModel::addMockScreenshot,
-                                onOpenFloatingCapture = ::openFloatingCapture
+                                onOpenFloatingCapture = ::openFloatingCapture,
+                                pendingCaptureTitle = pending?.title,
+                                pendingCaptureText = pending?.text,
+                                pendingCaptureUrl = pending?.url,
+                                pendingCaptureShowFolderPicker = pending?.showFolderPicker == true,
+                                pendingCaptureRequestId = pending?.requestId,
+                                onPendingCaptureConsumed = {
+                                    pendingCapture = null
+                                    openCaptureRequested = false
+                                }
                             )
                         }
                         composable("search") {
@@ -119,6 +144,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingCapture = intent.toPendingCapture()
+        openCaptureRequested = intent.getBooleanExtra(EXTRA_NAV_CAPTURE, false)
+    }
+
     private fun openFloatingCapture() {
         if (Settings.canDrawOverlays(this)) {
             FloatingCaptureService.start(this)
@@ -131,4 +163,35 @@ class MainActivity : ComponentActivity() {
             startActivity(intent)
         }
     }
+
+    private fun Intent.toPendingCapture(): PendingCapture? {
+        if (!getBooleanExtra(EXTRA_OPEN_CAPTURE, false)) return null
+        val text = getStringExtra(EXTRA_CAPTURE_TEXT).orEmpty()
+        val url = getStringExtra(EXTRA_CAPTURE_URL).orEmpty()
+        if (text.isBlank() && url.isBlank()) return null
+        return PendingCapture(
+            requestId = System.currentTimeMillis(),
+            title = getStringExtra(EXTRA_CAPTURE_TITLE).orEmpty(),
+            text = text,
+            url = url,
+            showFolderPicker = getBooleanExtra(EXTRA_PICK_FOLDER, true)
+        )
+    }
+
+    companion object {
+        const val EXTRA_OPEN_CAPTURE = "com.huoyejia.extra.OPEN_CAPTURE"
+        const val EXTRA_CAPTURE_TITLE = "com.huoyejia.extra.CAPTURE_TITLE"
+        const val EXTRA_CAPTURE_TEXT = "com.huoyejia.extra.CAPTURE_TEXT"
+        const val EXTRA_CAPTURE_URL = "com.huoyejia.extra.CAPTURE_URL"
+        const val EXTRA_NAV_CAPTURE = "com.huoyejia.extra.NAV_CAPTURE"
+        const val EXTRA_PICK_FOLDER = "com.huoyejia.extra.PICK_FOLDER"
+    }
 }
+
+private data class PendingCapture(
+    val requestId: Long,
+    val title: String,
+    val text: String,
+    val url: String,
+    val showFolderPicker: Boolean
+)

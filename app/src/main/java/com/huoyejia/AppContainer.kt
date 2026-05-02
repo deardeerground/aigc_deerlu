@@ -19,6 +19,7 @@ import com.huoyejia.domain.SearchService
 import com.huoyejia.domain.VideoGenerationService
 
 class AppContainer(context: Context) {
+    private val appContext = context.applicationContext
     private val db = HuoyejiaDatabase.create(context)
     private val mockBlueLM = MockBlueLMAdapter()
     val blueLM: BlueLMAdapter = RemoteBlueLMAdapter(LlmRuntimeConfig.fromBuildConfig(), mockBlueLM)
@@ -27,7 +28,7 @@ class AppContainer(context: Context) {
     val relationRepository = RelationRepository(db.relationDao())
     val reviewCardRepository = ReviewCardRepository(db.reviewCardDao())
     val statsRepository = StatsRepository(db.statsDao())
-    val processor = NoteProcessor(noteRepository, relationRepository, reviewCardRepository, blueLM)
+    val processor = NoteProcessor(appContext, noteRepository, relationRepository, reviewCardRepository, blueLM)
     val searchService = SearchService(noteRepository, blueLM)
     val explainService = ExplainService(noteRepository, relationRepository, blueLM)
     val pptExportService = PptExportService(context.applicationContext, blueLM)

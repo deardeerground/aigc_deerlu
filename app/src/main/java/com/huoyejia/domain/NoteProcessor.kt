@@ -1,5 +1,10 @@
 package com.huoyejia.domain
 
+import android.content.Context
+import android.net.Uri
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import com.huoyejia.ai.BlueLMAdapter
 import com.huoyejia.data.NoteRepository
 import com.huoyejia.data.RelationRepository
@@ -10,9 +15,17 @@ import com.huoyejia.data.local.NoteRelationEntity
 import com.huoyejia.data.local.ReviewCardEntity
 import com.huoyejia.util.JsonText
 import com.huoyejia.util.VectorCodec
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.UUID
+import kotlin.coroutines.resume
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 
 class NoteProcessor(
+    private val context: Context,
     private val noteRepository: NoteRepository,
     private val relationRepository: RelationRepository,
     private val reviewCardRepository: ReviewCardRepository,
@@ -53,8 +66,9 @@ class NoteProcessor(
 
     suspend fun process(noteId: String) {
         val note = noteRepository.getNote(noteId) ?: return
-        val ocrText = mockOcr(note)
-        val content = normalizeContent(note.rawText.orEmpty(), ocrText)
+        val ocrText = recognizeImageText(note)
+        val webText = fetchWebText(note.url)
+        val content = normalizeContent(note.rawText.orEmpty(), ocrText, webText)
         val vector = blueLM.embed(content)
         val historical = noteRepository.loadWithEmbeddings(noteId)
         val ranked = historical.map {
@@ -128,17 +142,71 @@ class NoteProcessor(
         )
     }
 
-    private fun mockOcr(note: NoteEntity): String {
-        if (note.imagePath.isNullOrBlank()) return ""
-        return when (note.sourceType) {
-            "image" -> "OCR识别：课堂PPT照片，欧洲势力范围变化示意图，二战前地缘压力。"
-            "pdf" -> "OCR识别：PDF页脚摘录，关键概念与例题。"
-            else -> "OCR识别：截图文本，等待学生回流复习。"
+    private suspend fun recognizeImageText(note: NoteEntity): String {
+        val imagePath = note.imagePath?.takeIf { it.isNotBlank() } ?: return ""
+        val image = runCatching {
+            val uri = when {
+                imagePath.startsWith("content://") || imagePath.startsWith("file://") -> Uri.parse(imagePath)
+                else -> Uri.fromFile(File(imagePath))
+            }
+            InputImage.fromFilePath(context, uri)
+        }.getOrNull() ?: return ""
+        val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+        return try {
+            suspendCancellableCoroutine { continuation ->
+                recognizer.process(image)
+                    .addOnSuccessListener { result ->
+                        if (continuation.isActive) continuation.resume(result.text.trim())
+                    }
+                    .addOnFailureListener {
+                        if (continuation.isActive) continuation.resume("")
+                    }
+            }
+        } finally {
+            recognizer.close()
         }
     }
 
-    private fun normalizeContent(raw: String, ocr: String): String {
-        return listOf(raw, ocr)
+    private suspend fun fetchWebText(url: String?): String = withContext(Dispatchers.IO) {
+        val target = url?.trim()?.takeIf { it.startsWith("http://") || it.startsWith("https://") } ?: return@withContext ""
+        runCatching {
+            val connection = (URL(target).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 10000
+                readTimeout = 12000
+                instanceFollowRedirects = true
+                requestMethod = "GET"
+                setRequestProperty(
+                    "User-Agent",
+                    "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36"
+                )
+                setRequestProperty("Accept", "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8")
+            }
+            connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                .htmlToReadableText()
+                .take(10000)
+        }.getOrDefault("")
+    }
+
+    private fun String.htmlToReadableText(): String {
+        return replace(Regex("(?is)<script.*?</script>"), " ")
+            .replace(Regex("(?is)<style.*?</style>"), " ")
+            .replace(Regex("(?is)<[^>]+>"), " ")
+            .replace("&nbsp;", " ")
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'")
+            .replace(Regex("\\s{2,}"), " ")
+            .trim()
+    }
+
+    private fun normalizeContent(raw: String, ocr: String, web: String): String {
+        return listOf(
+            raw,
+            ocr.takeIf { it.isNotBlank() }?.let { "OCR识别结果：\n$it" }.orEmpty(),
+            web.takeIf { it.isNotBlank() }?.let { "网页正文抓取：\n$it" }.orEmpty()
+        )
             .filter { it.isNotBlank() }
             .joinToString("\n")
             .replace(Regex("[\\u0000-\\u001F]"), " ")
