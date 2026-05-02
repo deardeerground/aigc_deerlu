@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -40,7 +41,7 @@ fun HuoyejiaScaffold(
     val current = backStack?.destination?.route.orEmpty()
     Scaffold(
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+            NavigationBar(containerColor = MaterialTheme.colorScheme.primary) {
                 tabs.forEach { tab ->
                     NavigationBarItem(
                         selected = current == tab.route,
@@ -52,7 +53,14 @@ fun HuoyejiaScaffold(
                             }
                         },
                         icon = { Text(tab.symbol) },
-                        label = { Text(tab.label) }
+                        label = { Text(tab.label) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            selectedTextColor = MaterialTheme.colorScheme.onPrimary,
+                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                            unselectedIconColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.64f),
+                            unselectedTextColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                        )
                     )
                 }
             }
@@ -61,14 +69,15 @@ fun HuoyejiaScaffold(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .padding(padding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            content(padding)
+            content(PaddingValues(0.dp))
             if (isBusy) {
                 LinearProgressIndicator(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = padding.calculateTopPadding())
+                        .padding(top = 0.dp)
                 )
             }
         }
