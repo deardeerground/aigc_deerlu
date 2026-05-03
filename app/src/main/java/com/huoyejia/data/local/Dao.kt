@@ -7,6 +7,27 @@ import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
 @Dao
+interface FolderDao {
+    @Query("SELECT * FROM folders ORDER BY created_at DESC")
+    fun observeFolders(): Flow<List<FolderEntity>>
+
+    @Query("SELECT * FROM folders ORDER BY created_at DESC")
+    suspend fun loadAllFolders(): List<FolderEntity>
+
+    @Query("SELECT * FROM folders WHERE folder_id = :folderId")
+    suspend fun getFolder(folderId: String): FolderEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(folder: FolderEntity)
+
+    @Query("DELETE FROM folders WHERE folder_id = :folderId")
+    suspend fun deleteFolder(folderId: String)
+
+    @Query("SELECT COUNT(*) FROM notes WHERE folder_id = :folderId")
+    suspend fun countNotesInFolder(folderId: String): Int
+}
+
+@Dao
 interface NoteDao {
     @Query("SELECT * FROM notes ORDER BY created_at DESC")
     fun observeNotes(): Flow<List<NoteEntity>>

@@ -6,11 +6,38 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
+    tableName = "folders",
+    indices = [Index("created_at")]
+)
+data class FolderEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "folder_id")
+    val folderId: String,
+    @ColumnInfo(name = "name")
+    val name: String,
+    @ColumnInfo(name = "created_at")
+    val createdAt: Long,
+    @ColumnInfo(name = "icon")
+    val icon: String? = null,
+    @ColumnInfo(name = "color")
+    val color: Long? = null
+)
+
+@Entity(
     tableName = "notes",
     indices = [
         Index("created_at"),
         Index("source_type"),
-        Index("processed_status")
+        Index("processed_status"),
+        Index("folder_id")
+    ],
+    foreignKeys = [
+        androidx.room.ForeignKey(
+            entity = FolderEntity::class,
+            parentColumns = ["folder_id"],
+            childColumns = ["folder_id"],
+            onDelete = androidx.room.ForeignKey.SET_NULL
+        )
     ]
 )
 data class NoteEntity(
@@ -48,7 +75,9 @@ data class NoteEntity(
     @ColumnInfo(name = "read_status")
     val readStatus: Boolean,
     @ColumnInfo(name = "reviewed_count")
-    val reviewedCount: Int
+    val reviewedCount: Int,
+    @ColumnInfo(name = "folder_id")
+    val folderId: String? = null
 )
 
 @Entity(tableName = "note_embeddings")

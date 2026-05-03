@@ -62,10 +62,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
-import com.huoyejia.data.local.NoteEntity
-import com.huoyejia.data.local.NoteRelationEntity
-import com.huoyejia.data.local.ReviewCardEntity
-import com.huoyejia.data.local.UserStatsEntity
+ import com.huoyejia.data.local.NoteEntity
+ import com.huoyejia.data.local.NoteRelationEntity
+ import com.huoyejia.data.local.ReviewCardEntity
+ import com.huoyejia.data.local.UserStatsEntity
+ import com.huoyejia.data.local.FolderEntity
 import com.huoyejia.domain.ExplainUiState
 import com.huoyejia.domain.ExplainPack
 import com.huoyejia.domain.ScoredNote
@@ -147,9 +148,11 @@ fun InboxScreen(
 
 @Composable
 fun CaptureScreen(
-    onSaveText: (String, String, String, String?, String?) -> Unit,
+    onSaveText: (String, String, String, String?, String?, String?) -> Unit,
     onMockScreenshot: () -> Unit,
     onOpenFloatingCapture: () -> Unit,
+    folders: List<FolderEntity>,
+    onCreateFolder: (String) -> Unit,
     pendingCaptureTitle: String? = null,
     pendingCaptureText: String? = null,
     pendingCaptureUrl: String? = null,
@@ -158,12 +161,11 @@ fun CaptureScreen(
     onPendingCaptureConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    var title by remember { mutableStateOf("\u672a\u547d\u540d\u5b66\u4e60\u6750\u6599") }
+    var title by remember { mutableStateOf("未命名学习材料") }
     var text by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
     var screenshotUri by remember { mutableStateOf<String?>(null) }
     var showFolderPicker by remember { mutableStateOf(false) }
-    var folders by remember { mutableStateOf(loadCaptureFolders(context)) }
     val screenshotPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
@@ -259,7 +261,7 @@ fun CaptureScreen(
         FolderPickerDialog(
             folders = folders,
             onCreateFolder = { name ->
-                folders = saveCaptureFolders(context, folders + name)
+                onCreateFolder(name)
             },
             onDismiss = { showFolderPicker = false },
             onConfirm = { folder ->
@@ -276,7 +278,14 @@ fun CaptureScreen(
                     screenshotUri != null -> "image"
                     else -> "manual"
                 }
-                onSaveText(title.ifBlank { "\u672a\u547d\u540d\u5b66\u4e60\u6750\u6599" }, resolvedText, sourceType, resolvedUrl.ifBlank { null }, screenshotUri)
+                onSaveText(
+                    title.ifBlank { "未命名学习材料" },
+                    resolvedText,
+                    sourceType,
+                    resolvedUrl.ifBlank { null },
+                    screenshotUri,
+                    folder
+                )
                 showFolderPicker = false
             }
         )
@@ -312,12 +321,12 @@ private fun CaptureActionCard(
 
 @Composable
 private fun FolderPickerDialog(
-    folders: List<String>,
+    folders: List<FolderEntity>,
     onCreateFolder: (String) -> Unit,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
 ) {
-    var selectedFolder by remember(folders) { mutableStateOf(folders.firstOrNull().orEmpty()) }
+    var selectedFolder by remember(folders) { mutableStateOf(folders.firstOrNull()?.name.orEmpty()) }
     var creating by remember { mutableStateOf(false) }
     var newFolderName by remember { mutableStateOf("") }
 
@@ -364,14 +373,14 @@ private fun FolderPickerDialog(
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { selectedFolder = folder },
+                            .clickable { selectedFolder = folder.name },
                         shape = RoundedCornerShape(16.dp),
-                        color = if (selectedFolder == folder) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, if (selectedFolder == folder) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
+                        color = if (selectedFolder == folder.name) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, if (selectedFolder == folder.name) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
                     ) {
                         Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(folder, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                            if (selectedFolder == folder) Text("\u5df2\u9009", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
+                            Text(folder.name, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                            if (selectedFolder == folder.name) Text("\u5df2\u9009", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
                         }
                     }
                 }
@@ -413,23 +422,6 @@ private fun buildCapturePayload(
     }
 }
 
-private fun loadCaptureFolders(context: android.content.Context): List<String> {
-    val raw = context.getSharedPreferences("capture_folders", android.content.Context.MODE_PRIVATE)
-        .getString("folders", null)
-    return raw?.split("||")?.filter { it.isNotBlank() }?.distinct().orEmpty().ifEmpty {
-        listOf("\u9ed8\u8ba4\u6536\u85cf\u5939", "\u8bfe\u7a0b\u590d\u4e60", "\u8bba\u6587\u8d44\u6599", "\u7075\u611f\u7d20\u6750")
-    }
-}
-
-private fun saveCaptureFolders(context: android.content.Context, folders: List<String>): List<String> {
-    val clean = folders.map { it.trim() }.filter { it.isNotBlank() }.distinct()
-    context.getSharedPreferences("capture_folders", android.content.Context.MODE_PRIVATE)
-        .edit()
-        .putString("folders", clean.joinToString("||"))
-        .apply()
-    return clean
-}
-
 private fun copyImageToCaptureStorage(context: android.content.Context, uri: Uri): String? {
     return runCatching {
         val dir = File(context.filesDir, "capture_images").apply { mkdirs() }
@@ -441,32 +433,39 @@ private fun copyImageToCaptureStorage(context: android.content.Context, uri: Uri
     }.getOrNull()
 }
 
-@Composable
-fun SearchScreen(
-    results: List<ScoredNote>,
-    onSearch: (String) -> Unit,
-    onOpenNote: (String) -> Unit
-) {
-    var query by remember { mutableStateOf("帮我找关于二战原因的所有内容") }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 18.dp, vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        SectionTitle("自然语言检索")
-        OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("输入问题") }, modifier = Modifier.fillMaxWidth())
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { onSearch(query) }) { Text("检索") }
-            OutlinedButton(onClick = { onSearch("找上次那张地图截图") }) { Text("找地图截图") }
-        }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
-            items(results, key = { it.note.noteId }) { result ->
-                ResultCard(result = result, onClick = { onOpenNote(result.note.noteId) })
-            }
-        }
-    }
-}
+/**
+ * 搜索页面 - 已禁用
+ * 
+ * 此搜索功能已被暂时禁用。如果您需要重新启用此功能，
+ * 请取消注释以下代码并确保相关的导航路由也已启用。
+ * 
+ * @Composable
+ * fun SearchScreen(
+ *     results: List<ScoredNote>,
+ *     onSearch: (String) -> Unit,
+ *     onOpenNote: (String) -> Unit
+ * ) {
+ *     var query by remember { mutableStateOf("帮我找关于二战原因的所有内容") }
+ *     Column(
+ *         modifier = Modifier
+ *             .fillMaxSize()
+ *             .padding(horizontal = 18.dp, vertical = 24.dp),
+ *         verticalArrangement = Arrangement.spacedBy(12.dp)
+ *     ) {
+ *         SectionTitle("自然语言检索")
+ *         OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("输入问题") }, modifier = Modifier.fillMaxWidth())
+ *         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+ *             Button(onClick = { onSearch(query) }) { Text("检索") }
+ *             OutlinedButton(onClick = { onSearch("找上次那张地图截图") }) { Text("找地图截图") }
+ *         }
+ *         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
+ *             items(results, key = { it.note.noteId }) { result ->
+ *                 ResultCard(result = result, onClick = { onOpenNote(result.note.noteId) })
+ *             }
+ *         }
+ *     }
+ * }
+ */
 
 @Composable
 fun ReviewScreen(

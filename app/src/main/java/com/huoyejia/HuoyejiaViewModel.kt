@@ -3,13 +3,16 @@ package com.huoyejia
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.huoyejia.data.local.FolderEntity
 import com.huoyejia.data.local.NoteEntity
 import com.huoyejia.data.local.NoteRelationEntity
 import com.huoyejia.data.local.ReviewCardEntity
 import com.huoyejia.data.local.UserStatsEntity
-import com.huoyejia.domain.ExplainUiState
-import com.huoyejia.domain.ScoredNote
+ import com.huoyejia.domain.ExplainUiState
+ import com.huoyejia.domain.ExplainPack
+ import com.huoyejia.domain.ScoredNote
 import com.huoyejia.domain.StatsCalculator
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +34,9 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
 
     val stats: StateFlow<UserStatsEntity?> = container.statsRepository.observeLatest()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val folders: StateFlow<List<FolderEntity>> = container.folderRepository.observeFolders()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _searchResults = MutableStateFlow<List<ScoredNote>>(emptyList())
     val searchResults: StateFlow<List<ScoredNote>> = _searchResults.asStateFlow()
@@ -59,7 +65,7 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun addManualNote(title: String, text: String, sourceType: String = "manual") {
+    fun addManualNote(title: String, text: String, sourceType: String = "manual", folderId: String? = null) {
         if (text.isBlank()) return
         viewModelScope.launch {
             _isBusy.value = true
@@ -68,10 +74,34 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
                 imagePath = null,
                 sourceType = sourceType,
                 sourceTitle = title.ifBlank { "手动粘贴" },
-                url = null
+                url = null,
+                folderId = folderId
             )
             refreshStats()
             _isBusy.value = false
+        }
+    }
+
+    fun createFolder(name: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            val folder = FolderEntity(
+                folderId = java.util.UUID.randomUUID().toString(),
+                name = name.trim(),
+                createdAt = System.currentTimeMillis()
+            )
+            container.folderRepository.upsert(folder)
+        }
+    }
+
+    fun deleteFolder(folderId: String) {
+        viewModelScope.launch {
+            container.folderRepository.deleteFolder(folderId)
+            // 将该文件夹内的笔记 folderId 设为 null
+            val notesInFolder = notes.value.filter { it.folderId == folderId }
+            notesInFolder.forEach { note ->
+                container.noteRepository.upsert(note.copy(folderId = null))
+            }
         }
     }
 
@@ -80,7 +110,8 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
         text: String,
         sourceType: String = "manual",
         url: String? = null,
-        imagePath: String? = null
+        imagePath: String? = null,
+        folderId: String? = null
     ) {
         if (text.isBlank() && url.isNullOrBlank() && imagePath.isNullOrBlank()) return
         viewModelScope.launch {
@@ -90,7 +121,8 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
                 imagePath = imagePath,
                 sourceType = sourceType,
                 sourceTitle = title.ifBlank { "手动粘贴" },
-                url = url
+                url = url,
+                folderId = folderId
             )
             refreshStats()
             _isBusy.value = false
@@ -101,11 +133,11 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             _isBusy.value = true
             container.processor.captureAndProcess(
-                rawText = "绥靖政策没有阻止德国扩张，反而让侵略成本下降。它可以和凡尔赛体系、经济危机一起解释二战原因。",
+                rawText = "费曼学习法的关键：用自己话输出，暴露理解漏洞，再回到材料修正。输出是理解的标志。",
                 imagePath = null,
                 sourceType = "web",
-                sourceTitle = "网页收藏：绥靖政策与二战",
-                url = "https://example.com/appeasement"
+                sourceTitle = "学习方法：费曼输出法",
+                url = "https://example.com/feynman"
             )
             refreshStats()
             _isBusy.value = false
@@ -174,7 +206,7 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
                 isGenerating = true,
                 errorMessage = null
             )
-            val pack = runCatching { container.explainService.generate(resolvedNoteId) }.getOrNull()
+            val pack: ExplainPack? = runCatching { container.explainService.generate(resolvedNoteId) }.getOrNull()
             _explainState.value = if (pack != null) {
                 _explainState.value.copy(
                     isGenerating = false,
@@ -197,29 +229,30 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun exportExplainPpt() {
-        val pack = _explainState.value.pack ?: return
-        viewModelScope.launch {
-            _explainState.value = _explainState.value.copy(
-                isExporting = true,
-                exportErrorMessage = null
-            )
-            val file = runCatching { container.pptExportService.export(pack) }.getOrNull()
-            _explainState.value = if (file != null) {
-                _explainState.value.copy(
-                    isExporting = false,
-                    exportedPptPath = file.absolutePath,
-                    providerLabel = container.blueLM.providerName,
-                    remoteReady = container.blueLM.remoteReady
-                )
-            } else {
-                _explainState.value.copy(
-                    isExporting = false,
-                    exportErrorMessage = "PPT 导出失败，请重新生成讲解包后再试。"
-                )
-            }
-        }
-    }
+     fun exportExplainPpt() {
+         val pack = _explainState.value.pack ?: return
+         viewModelScope.launch {
+             _explainState.value = _explainState.value.copy(
+                 isExporting = true,
+                 exportErrorMessage = null
+             )
+            val file: File? = runCatching { container.pptExportService.export(pack) }
+                .getOrNull()
+             _explainState.value = if (file != null) {
+                 _explainState.value.copy(
+                     isExporting = false,
+                     exportedPptPath = file.absolutePath,
+                     providerLabel = container.blueLM.providerName,
+                     remoteReady = container.blueLM.remoteReady
+                 )
+             } else {
+                 _explainState.value.copy(
+                     isExporting = false,
+                     exportErrorMessage = "PPT 导出失败，请重新生成讲解包后再试。"
+                 )
+             }
+         }
+     }
 
     fun exportExplainAnimation() {
         val pack = _explainState.value.pack ?: return
@@ -228,7 +261,8 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
                 isAnimationExporting = true,
                 animationExportErrorMessage = null
             )
-            val file = runCatching { container.animationExportService.export(pack) }.getOrNull()
+            val file: File? = runCatching { container.animationExportService.export(pack) }
+                .getOrNull()
             _explainState.value = if (file != null) {
                 _explainState.value.copy(
                     isAnimationExporting = false,
@@ -251,7 +285,7 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
                 videoGenerationErrorMessage = null
             )
             val result = runCatching { container.videoGenerationService.generate(pack) }
-            val file = result.getOrNull()
+            val file: File? = result.getOrNull()
             _explainState.value = if (file != null) {
                 _explainState.value.copy(
                     isVideoGenerating = false,

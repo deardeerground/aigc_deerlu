@@ -1,6 +1,8 @@
 package com.huoyejia.data
 
 import com.huoyejia.data.local.EmbeddingDao
+import com.huoyejia.data.local.FolderDao
+import com.huoyejia.data.local.FolderEntity
 import com.huoyejia.data.local.NoteDao
 import com.huoyejia.data.local.NoteEmbeddingEntity
 import com.huoyejia.data.local.NoteEntity
@@ -12,6 +14,20 @@ import com.huoyejia.data.local.ReviewCardEntity
 import com.huoyejia.data.local.StatsDao
 import com.huoyejia.data.local.UserStatsEntity
 import kotlinx.coroutines.flow.Flow
+
+class FolderRepository(private val dao: FolderDao) {
+    fun observeFolders(): Flow<List<FolderEntity>> = dao.observeFolders()
+
+    suspend fun loadAllFolders(): List<FolderEntity> = dao.loadAllFolders()
+
+    suspend fun getFolder(folderId: String): FolderEntity? = dao.getFolder(folderId)
+
+    suspend fun upsert(folder: FolderEntity) = dao.upsert(folder)
+
+    suspend fun deleteFolder(folderId: String) = dao.deleteFolder(folderId)
+
+    suspend fun countNotesInFolder(folderId: String): Int = dao.countNotesInFolder(folderId)
+}
 
 class NoteRepository(
     private val noteDao: NoteDao,

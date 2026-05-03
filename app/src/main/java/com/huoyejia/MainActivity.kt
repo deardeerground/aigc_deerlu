@@ -12,23 +12,32 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
 import com.huoyejia.ui.CaptureScreen
+import com.huoyejia.ui.CollectionDetailScreen
+import com.huoyejia.ui.CollectionListScreen
 import com.huoyejia.ui.DashboardScreen
 import com.huoyejia.ui.ExplainScreen
-import com.huoyejia.ui.HuoyejiaScaffold
-import com.huoyejia.ui.InboxScreen
 import com.huoyejia.ui.HistoryScreen
+import com.huoyejia.ui.HuoyejiaScaffold
 import com.huoyejia.ui.NoteDetailScreen
 import com.huoyejia.ui.ReviewScreen
-import com.huoyejia.ui.SearchScreen
+// import com.huoyejia.ui.SearchScreen  // 搜索页面已禁用
 import com.huoyejia.ui.theme.HuoyejiaTheme
 
 class MainActivity : ComponentActivity() {
+
+    companion object {
+        const val EXTRA_OPEN_CAPTURE = "com.huoyejia.extra.OPEN_CAPTURE"
+        const val EXTRA_CAPTURE_TITLE = "com.huoyejia.extra.CAPTURE_TITLE"
+        const val EXTRA_CAPTURE_TEXT = "com.huoyejia.extra.CAPTURE_TEXT"
+        const val EXTRA_CAPTURE_URL = "com.huoyejia.extra.CAPTURE_URL"
+        const val EXTRA_NAV_CAPTURE = "com.huoyejia.extra.NAV_CAPTURE"
+        const val EXTRA_PICK_FOLDER = "com.huoyejia.extra.PICK_FOLDER"
+    }
+
     private var pendingCapture by mutableStateOf<PendingCapture?>(null)
     private var openCaptureRequested by mutableStateOf(false)
 
@@ -40,8 +49,6 @@ class MainActivity : ComponentActivity() {
             HuoyejiaTheme {
                 val viewModel: HuoyejiaViewModel = viewModel()
                 val navController = rememberNavController()
-                val pending = pendingCapture
-                val shouldOpenCapture = pending != null || openCaptureRequested
                 val notes by viewModel.notes.collectAsState()
                 val relations by viewModel.relations.collectAsState()
                 val cards by viewModel.cards.collectAsState()
@@ -49,25 +56,27 @@ class MainActivity : ComponentActivity() {
                 val results by viewModel.searchResults.collectAsState()
                 val explainState by viewModel.explainState.collectAsState()
                 val isBusy by viewModel.isBusy.collectAsState()
+                val folders by viewModel.folders.collectAsState()
+                val pending = pendingCapture
+                val shouldOpenCapture = pending != null || openCaptureRequested
 
                 LaunchedEffect(shouldOpenCapture) {
                     if (shouldOpenCapture) {
-                        navController.navigate("capture") { launchSingleTop = true }
+                        navController.navigate("capture") {
+                            launchSingleTop = true
+                            popUpTo("collections") { saveState = false }
+                        }
                     }
                 }
 
                 HuoyejiaScaffold(navController = navController, isBusy = isBusy) {
-                    NavHost(navController = navController, startDestination = if (shouldOpenCapture) "capture" else "inbox") {
-                        composable("inbox") {
-                            InboxScreen(
+                    NavHost(navController = navController, startDestination = "collections") {
+                        composable("collections") {
+                            CollectionListScreen(
+                                navController = navController,
                                 notes = notes,
-                                relations = relations,
-                                cards = cards,
-                                stats = stats,
-                                onOpenNote = { navController.navigate("detail/$it") },
-                                onDeleteNote = viewModel::deleteNote,
-                                onAddDemo = viewModel::addDemoLinkedNote,
-                                onStartReview = { navController.navigate("review") }
+                                folders = folders,
+                                onCreateFolder = viewModel::createFolder
                             )
                         }
                         composable("capture") {
@@ -75,6 +84,8 @@ class MainActivity : ComponentActivity() {
                                 onSaveText = viewModel::addCaptureNote,
                                 onMockScreenshot = viewModel::addMockScreenshot,
                                 onOpenFloatingCapture = ::openFloatingCapture,
+                                folders = folders,
+                                onCreateFolder = viewModel::createFolder,
                                 pendingCaptureTitle = pending?.title,
                                 pendingCaptureText = pending?.text,
                                 pendingCaptureUrl = pending?.url,
@@ -86,13 +97,13 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                         }
-                        composable("search") {
-                            SearchScreen(
-                                results = results,
-                                onSearch = viewModel::search,
-                                onOpenNote = { navController.navigate("detail/$it") }
-                            )
-                        }
+                        // composable("search") {
+                            //     SearchScreen(
+                            //         results = results,
+                            //         onSearch = viewModel::search,
+                            //         onOpenNote = { navController.navigate("detail/$it") }
+                            //     )
+                            // } // 搜索路由已禁用
                         composable("review") {
                             ReviewScreen(
                                 notes = notes,
@@ -123,10 +134,17 @@ class MainActivity : ComponentActivity() {
                         composable("dashboard") {
                             DashboardScreen(stats = stats, notes = notes, cards = cards)
                         }
-                        composable(
-                            route = "detail/{noteId}",
-                            arguments = listOf(navArgument("noteId") { type = NavType.StringType })
-                        ) { entry ->
+                        composable("collection_detail/{folderId}") { entry ->
+                            val folderId = entry.arguments?.getString("folderId").orEmpty()
+                            CollectionDetailScreen(
+                                navController = navController,
+                                folderId = folderId,
+                                notes = notes,
+                                folders = folders,
+                                onDeleteNote = viewModel::deleteNote
+                            )
+                        }
+                        composable("detail/{noteId}") { entry ->
                             val noteId = entry.arguments?.getString("noteId").orEmpty()
                             NoteDetailScreen(
                                 note = viewModel.noteById(noteId),
@@ -176,15 +194,6 @@ class MainActivity : ComponentActivity() {
             url = url,
             showFolderPicker = getBooleanExtra(EXTRA_PICK_FOLDER, true)
         )
-    }
-
-    companion object {
-        const val EXTRA_OPEN_CAPTURE = "com.huoyejia.extra.OPEN_CAPTURE"
-        const val EXTRA_CAPTURE_TITLE = "com.huoyejia.extra.CAPTURE_TITLE"
-        const val EXTRA_CAPTURE_TEXT = "com.huoyejia.extra.CAPTURE_TEXT"
-        const val EXTRA_CAPTURE_URL = "com.huoyejia.extra.CAPTURE_URL"
-        const val EXTRA_NAV_CAPTURE = "com.huoyejia.extra.NAV_CAPTURE"
-        const val EXTRA_PICK_FOLDER = "com.huoyejia.extra.PICK_FOLDER"
     }
 }
 

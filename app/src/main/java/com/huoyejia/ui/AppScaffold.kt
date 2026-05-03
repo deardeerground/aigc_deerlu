@@ -23,7 +23,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 private data class Tab(val route: String, val label: String, val symbol: String)
 
 private val tabs = listOf(
-    Tab("inbox", "回流箱", "↺"),
+    Tab("collections", "回流箱", "↺"),
     Tab("capture", "采集", "+"),
     Tab("review", "复习", "✓"),
     Tab("history", "历史", "⌕"),
@@ -39,6 +39,9 @@ fun HuoyejiaScaffold(
 ) {
     val backStack by navController.currentBackStackEntryAsState()
     val current = backStack?.destination?.route.orEmpty()
+    // 获取导航图的起始路由（应该是"collections"）
+    val startDestination = "collections"
+
     Scaffold(
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.primary) {
@@ -48,8 +51,9 @@ fun HuoyejiaScaffold(
                         onClick = {
                             navController.navigate(tab.route) {
                                 launchSingleTop = true
-                                popUpTo("inbox") { saveState = true }
-                                restoreState = true
+                                // 弹出到起始页面，确保每次点击都从根状态开始
+                                popUpTo(startDestination) { saveState = false }
+                                restoreState = false
                             }
                         },
                         icon = { Text(tab.symbol) },

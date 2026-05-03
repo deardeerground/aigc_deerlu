@@ -7,16 +7,18 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [
+        FolderEntity::class,
         NoteEntity::class,
         NoteEmbeddingEntity::class,
         NoteRelationEntity::class,
         ReviewCardEntity::class,
         UserStatsEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class HuoyejiaDatabase : RoomDatabase() {
+    abstract fun folderDao(): FolderDao
     abstract fun noteDao(): NoteDao
     abstract fun embeddingDao(): EmbeddingDao
     abstract fun relationDao(): RelationDao

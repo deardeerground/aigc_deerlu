@@ -9,35 +9,38 @@ import com.huoyejia.ai.BlueLMAdapter
 import com.huoyejia.data.NoteRepository
 import com.huoyejia.data.RelationRepository
 import com.huoyejia.data.ReviewCardRepository
+import com.huoyejia.data.FolderRepository
 import com.huoyejia.data.local.NoteEmbeddingEntity
 import com.huoyejia.data.local.NoteEntity
 import com.huoyejia.data.local.NoteRelationEntity
 import com.huoyejia.data.local.ReviewCardEntity
 import com.huoyejia.util.JsonText
 import com.huoyejia.util.VectorCodec
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
 import kotlin.coroutines.resume
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
 
 class NoteProcessor(
     private val context: Context,
     private val noteRepository: NoteRepository,
     private val relationRepository: RelationRepository,
     private val reviewCardRepository: ReviewCardRepository,
-    private val blueLM: BlueLMAdapter
+    private val blueLM: BlueLMAdapter,
+    private val folderRepository: FolderRepository
 ) {
     suspend fun captureAndProcess(
         rawText: String,
         imagePath: String?,
         sourceType: String,
         sourceTitle: String,
-        url: String?
-    ): String {
+        url: String?,
+        folderId: String? = null
+    ): String = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         val noteId = UUID.randomUUID().toString()
         val note = NoteEntity(
@@ -57,15 +60,16 @@ class NoteProcessor(
             duplicateScore = 0f,
             processedStatus = "NEW",
             readStatus = false,
-            reviewedCount = 0
+            reviewedCount = 0,
+            folderId = folderId
         )
         noteRepository.upsert(note)
         process(noteId)
-        return noteId
+        noteId
     }
 
-    suspend fun process(noteId: String) {
-        val note = noteRepository.getNote(noteId) ?: return
+    suspend fun process(noteId: String) = withContext(Dispatchers.IO) {
+        val note = noteRepository.getNote(noteId) ?: return@withContext
         val ocrText = recognizeImageText(note)
         val webText = fetchWebText(note.url)
         val content = normalizeContent(note.rawText.orEmpty(), ocrText, webText)
