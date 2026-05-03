@@ -58,15 +58,16 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import kotlinx.coroutines.delay
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
- import com.huoyejia.data.local.NoteEntity
- import com.huoyejia.data.local.NoteRelationEntity
- import com.huoyejia.data.local.ReviewCardEntity
- import com.huoyejia.data.local.UserStatsEntity
- import com.huoyejia.data.local.FolderEntity
+import com.huoyejia.data.local.NoteEntity
+import com.huoyejia.data.local.NoteRelationEntity
+import com.huoyejia.data.local.ReviewCardEntity
+import com.huoyejia.data.local.UserStatsEntity
+import com.huoyejia.data.local.FolderEntity
 import com.huoyejia.domain.ExplainUiState
 import com.huoyejia.domain.ExplainPack
 import com.huoyejia.domain.ScoredNote
@@ -158,7 +159,8 @@ fun CaptureScreen(
     pendingCaptureUrl: String? = null,
     pendingCaptureShowFolderPicker: Boolean = false,
     pendingCaptureRequestId: Long? = null,
-    onPendingCaptureConsumed: () -> Unit = {}
+    onPendingCaptureConsumed: () -> Unit = {},
+    onSaveComplete: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var title by remember { mutableStateOf("未命名学习材料") }
@@ -166,6 +168,10 @@ fun CaptureScreen(
     var url by remember { mutableStateOf("") }
     var screenshotUri by remember { mutableStateOf<String?>(null) }
     var showFolderPicker by remember { mutableStateOf(false) }
+    // 保持初始的showFolderPicker值，用于判断是否是浮窗采集
+    var initialShowFolderPicker by remember { mutableStateOf(false) }
+    // 控制延迟导航
+    var shouldNavigateBack by remember { mutableStateOf(false) }
     val screenshotPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
@@ -177,11 +183,20 @@ fun CaptureScreen(
         val incomingText = pendingCaptureText.orEmpty()
         val incomingUrl = pendingCaptureUrl.orEmpty()
         if (incomingText.isNotBlank() || incomingUrl.isNotBlank()) {
-            title = pendingCaptureTitle?.takeIf { it.isNotBlank() } ?: "\u60ac\u6d6e\u7a97\u91c7\u96c6"
+            title = pendingCaptureTitle?.takeIf { it.isNotBlank() } ?: "浮窗采集"
             text = incomingText
             url = incomingUrl
+            initialShowFolderPicker = pendingCaptureShowFolderPicker
             showFolderPicker = pendingCaptureShowFolderPicker
             onPendingCaptureConsumed()
+        }
+    }
+
+    // 延迟导航返回，让用户看到保存结果
+    LaunchedEffect(shouldNavigateBack) {
+        if (shouldNavigateBack) {
+            delay(500)
+            onSaveComplete()
         }
     }
 
@@ -194,8 +209,8 @@ fun CaptureScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                SectionTitle("\u5feb\u901f\u91c7\u96c6")
-                TinyText("\u5148\u6574\u7406\u6750\u6599\uff0c\u518d\u9009\u62e9\u6536\u85cf\u5939\u5e76\u4ea4\u7ed9 AI \u603b\u7ed3\u3002")
+                SectionTitle("快速采集")
+                TinyText("先整理素材，再选择收藏夹并交给 AI 总结。")
             }
             Button(
                 onClick = onOpenFloatingCapture,
@@ -203,14 +218,14 @@ fun CaptureScreen(
                 shape = CircleShape,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
             ) {
-                Text("\u6d6e", fontWeight = FontWeight.Black)
+                Text("浮", fontWeight = FontWeight.Black)
             }
         }
 
         OutlinedTextField(
             value = title,
             onValueChange = { title = it },
-            label = { Text("\u6807\u9898") },
+            label = { Text("标题") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
@@ -218,22 +233,22 @@ fun CaptureScreen(
         OutlinedTextField(
             value = text,
             onValueChange = { text = it },
-            label = { Text("\u7c98\u8d34\u5b66\u4e60\u5185\u5bb9 / \u6587\u7ae0\u6b63\u6587") },
+            label = { Text("粘贴学习内容 / 文章正文") },
             minLines = 8,
             modifier = Modifier.fillMaxWidth()
         )
 
         CaptureActionCard(
-            title = if (screenshotUri != null) "\u622a\u56fe\u5df2\u52a0\u5165" else "\u52a0\u5165\u622a\u56fe",
-            body = screenshotUri?.let { "\u5df2\u9009\u62e9\u672c\u5730\u56fe\u7247\uff1a${it.take(42)}..." } ?: "\u70b9\u51fb\u4ece\u672c\u5730\u76f8\u518c/\u622a\u56fe\u76f8\u518c\u4e2d\u9009\u62e9\u56fe\u7247\uff0cApp \u4f1a\u590d\u5236\u4e00\u4efd\u7528\u4e8e OCR\u3002",
-            action = if (screenshotUri != null) "\u91cd\u65b0\u9009\u62e9" else "\u9009\u62e9\u622a\u56fe",
+            title = if (screenshotUri != null) "截图已加入" else "加入截图",
+            body = screenshotUri?.let { "已选择本地图片：${it.take(42)}..." } ?: "点击从本地相册/截图相册中选择图片，App 会复制一份用于 OCR。",
+            action = if (screenshotUri != null) "重新选择" else "选择截图",
             onClick = { screenshotPicker.launch("image/*") }
         )
 
         OutlinedTextField(
             value = url,
             onValueChange = { url = it },
-            label = { Text("\u7c98\u8d34\u7f51\u5740\uff0c\u53ef\u9009") },
+            label = { Text("粘贴网址，可选") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
@@ -247,13 +262,12 @@ fun CaptureScreen(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f))
         ) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("\u5b58\u5165\u6d3b\u9875\u5939 + AI\u603b\u7ed3", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Black, fontSize = 20.sp)
-                Text(
-                    "\u9009\u62e9\u6536\u85cf\u5939\u540e\u4fdd\u5b58\uff0c\u7cfb\u7edf\u4f1a\u7ee7\u7eed\u6267\u884c\u6e05\u6d17\u3001\u6458\u8981\u3001\u6807\u7b7e\u3001\u5173\u8054\u65e7\u7b14\u8bb0\u548c\u590d\u4e60\u5361\u751f\u6210\u3002",
-                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.84f),
-                    lineHeight = 20.sp
-                )
-            }
+                Text("存入活页夹 + AI总结", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Black, fontSize = 20.sp)
+Text(
+                "选择收藏夹后保存，系统会继续执行清洗、摘要、标签、关联旧笔记和复习卡生成。",
+                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.84f),
+                lineHeight = 20.sp
+            )
         }
     }
 
@@ -264,29 +278,36 @@ fun CaptureScreen(
                 onCreateFolder(name)
             },
             onDismiss = { showFolderPicker = false },
-            onConfirm = { folder ->
-                val resolvedUrl = url.trim()
-                val resolvedText = buildCapturePayload(
-                    folder = folder,
-                    title = title,
-                    text = text,
-                    url = resolvedUrl,
-                    imagePath = screenshotUri
-                )
-                val sourceType = when {
-                    resolvedUrl.startsWith("http://") || resolvedUrl.startsWith("https://") -> "web"
-                    screenshotUri != null -> "image"
-                    else -> "manual"
+            onConfirm = { folderEntity ->
+                if (folderEntity != null) {
+                    val resolvedUrl = url.trim()
+                    val resolvedText = buildCapturePayload(
+                        folder = folderEntity.name,
+                        title = title,
+                        text = text,
+                        url = resolvedUrl,
+                        imagePath = screenshotUri
+                    )
+                    val sourceType = when {
+                        resolvedUrl.startsWith("http://") || resolvedUrl.startsWith("https://") -> "web"
+                        screenshotUri != null -> "image"
+                        else -> "manual"
+                    }
+                    // 保存数据
+                    onSaveText(
+                        title.ifBlank { "未命名学习材料" },
+                        resolvedText,
+                        sourceType,
+                        resolvedUrl.ifBlank { null },
+                        screenshotUri,
+                        folderEntity.folderId
+                    )
+                    
+                    // 不立即关闭对话框，让用户手动返回
+                    // showFolderPicker = false
+                } else {
+                    showFolderPicker = false
                 }
-                onSaveText(
-                    title.ifBlank { "未命名学习材料" },
-                    resolvedText,
-                    sourceType,
-                    resolvedUrl.ifBlank { null },
-                    screenshotUri,
-                    folder
-                )
-                showFolderPicker = false
             }
         )
     }
@@ -324,9 +345,9 @@ private fun FolderPickerDialog(
     folders: List<FolderEntity>,
     onCreateFolder: (String) -> Unit,
     onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit
+    onConfirm: (FolderEntity?) -> Unit
 ) {
-    var selectedFolder by remember(folders) { mutableStateOf(folders.firstOrNull()?.name.orEmpty()) }
+    var selectedFolder by remember(folders) { mutableStateOf(folders.firstOrNull()) }
     var creating by remember { mutableStateOf(false) }
     var newFolderName by remember { mutableStateOf("") }
 
@@ -334,7 +355,7 @@ private fun FolderPickerDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("\u9009\u62e9\u6536\u85cf\u5939", modifier = Modifier.weight(1f), fontWeight = FontWeight.Black)
+                Text("选择收藏夹", modifier = Modifier.weight(1f), fontWeight = FontWeight.Black)
                 Button(
                     onClick = { creating = true },
                     modifier = Modifier.size(42.dp),
@@ -349,7 +370,7 @@ private fun FolderPickerDialog(
                     OutlinedTextField(
                         value = newFolderName,
                         onValueChange = { newFolderName = it },
-                        label = { Text("\u65b0\u5efa\u6536\u85cf\u5939\u540d\u79f0") },
+                        label = { Text("新建收藏夹名称") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -359,38 +380,39 @@ private fun FolderPickerDialog(
                                 val clean = newFolderName.trim()
                                 if (clean.isNotBlank()) {
                                     onCreateFolder(clean)
-                                    selectedFolder = clean
                                     newFolderName = ""
                                     creating = false
+                                    // 重建后刷新列表，让用户重新选择
+                                    selectedFolder = null
                                 }
                             },
                             enabled = newFolderName.isNotBlank()
-                        ) { Text("\u6dfb\u52a0") }
-                        TextButton(onClick = { creating = false }) { Text("\u53d6\u6d88\u65b0\u5efa") }
+                        ) { Text("添加") }
+                        TextButton(onClick = { creating = false }) { Text("取消新建") }
                     }
                 }
                 folders.forEach { folder ->
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { selectedFolder = folder.name },
+                            .clickable { selectedFolder = folder },
                         shape = RoundedCornerShape(16.dp),
-                        color = if (selectedFolder == folder.name) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, if (selectedFolder == folder.name) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
+                        color = if (selectedFolder?.folderId == folder.folderId) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, if (selectedFolder?.folderId == folder.folderId) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
                     ) {
                         Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(folder.name, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                            if (selectedFolder == folder.name) Text("\u5df2\u9009", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
+                            if (selectedFolder?.folderId == folder.folderId) Text("已选", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
                         }
                     }
                 }
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(selectedFolder) }, enabled = selectedFolder.isNotBlank()) { Text("\u786e\u8ba4") }
+            Button(onClick = { onConfirm(selectedFolder) }, enabled = selectedFolder != null) { Text("确认") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("\u53d6\u6d88") }
+            TextButton(onClick = onDismiss) { Text("取消") }
         }
     )
 }
@@ -403,21 +425,21 @@ private fun buildCapturePayload(
     imagePath: String?
 ): String {
     return buildString {
-        appendLine("\u6536\u85cf\u5939\uff1a$folder")
-        appendLine("\u6807\u9898\uff1a${title.ifBlank { "\u672a\u547d\u540d\u5b66\u4e60\u6750\u6599" }}")
+        appendLine("收藏夹：$folder")
+        appendLine("标题：${title.ifBlank { "未命名学习材料" }}")
         if (text.isNotBlank()) {
             appendLine()
-            appendLine("\u5b66\u4e60\u5185\u5bb9\uff1a")
+            appendLine("学习内容：")
             appendLine(text.trim())
         }
         if (url.isNotBlank()) {
             appendLine()
-            appendLine("\u5b66\u4e60\u7f51\u5740\uff1a$url")
-            appendLine("\u8bf7\u7ed3\u5408\u7f51\u5740\u5185\u5bb9\u751f\u6210\u6838\u5fc3\u6458\u8981\u3001\u7ed3\u6784\u5316\u8981\u70b9\u548c\u53ef\u590d\u4e60\u95ee\u9898\u3002")
+            appendLine("学习网址：$url")
+            appendLine("请结合网址内容生成核心摘要、结构化要点和可复习问题。")
         }
         if (!imagePath.isNullOrBlank()) {
             appendLine()
-            appendLine("\u622a\u56fe\uff1a\u5df2\u6dfb\u52a0\u672c\u5730\u56fe\u7247 $imagePath\uff0c\u8bf7\u5728\u603b\u7ed3\u65f6\u7ed3\u5408\u622a\u56fe\u7ebf\u7d22\u3002")
+            appendLine("截图：已添加本地图片 $imagePath，请在总结时结合截图线索。")
         }
     }
 }

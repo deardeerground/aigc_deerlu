@@ -4,7 +4,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,15 +11,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeContentPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -97,7 +92,7 @@ fun CollectionListScreen(
                 ) {
                     // 返回按钮
                     IconButton(
-                        onClick = { 
+                        onClick = {
                             isSearchExpanded = false
                             searchQuery = "" // 清空搜索内容
                         },
@@ -126,7 +121,7 @@ fun CollectionListScreen(
                         trailingIcon = {
                             if (searchQuery.isNotBlank()) {
                                 IconButton(
-                                    onClick = { 
+                                    onClick = {
                                         searchQuery = ""
                                         if (searchQuery.isBlank()) {
                                             isSearchExpanded = false // 如果搜索内容为空，退出搜索模式
@@ -184,24 +179,32 @@ fun CollectionListScreen(
                 .padding(paddingValues)
                 .background(MaterialTheme.colorScheme.background)
         ) {
+            // ====================== 关键修改1 ======================
+            // 把变量定义 移到 LazyColumn 外部（LazyListScope 不能定义变量）
+            val filteredFolders = if (searchQuery.isNotBlank()) {
+                if (folders.isNotEmpty() && notes.isNotEmpty()) {
+                    folders.filter { folder ->
+                        folder.name.contains(searchQuery, ignoreCase = true) ||
+                                notes.any { note ->
+                                    note.folderId == folder.folderId &&
+                                            note.sourceTitle.contains(searchQuery, ignoreCase = true)
+                                }
+                    }
+                } else {
+                    folders.filter { folder ->
+                        folder.name.contains(searchQuery, ignoreCase = true)
+                    }
+                }
+            } else {
+                folders
+            }
+            // ======================================================
+
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                // 过滤收藏夹列表
-                val filteredFolders = if (searchQuery.isNotBlank()) {
-                    folders.filter { folder ->
-                        folder.name.contains(searchQuery, ignoreCase = true) ||
-                        notes.any { note ->
-                            note.folderId == folder.folderId && 
-                            note.sourceTitle.contains(searchQuery, ignoreCase = true)
-                        }
-                    }
-                } else {
-                    folders
-                }
-
                 // 显示搜索结果提示
                 if (searchQuery.isNotBlank()) {
                     item {
@@ -218,79 +221,89 @@ fun CollectionListScreen(
 
                 // 收藏夹列表
                 items(filteredFolders, key = { it.folderId }) { folder ->
-                    val noteCount = notes.count { it.folderId == folder.folderId }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .combinedClickable(
-                                onClick = { navController.navigate("collection_detail/${folder.folderId}") },
-                                onLongClick = { 
-                                    folderToDelete = folder
-                                    showDeleteFolderDialog = true
-                                }
-                            )
-                    ) {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer
-                            ),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    if (folder != null && folder.folderId.isNotBlank()) {
+                        val noteCount = if (notes.isNotEmpty()) {
+                            notes.count { it.folderId == folder.folderId }
+                        } else {
+                            0
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .combinedClickable(
+                                    onClick = {
+                                        if (folder.folderId.isNotBlank()) {
+                                            navController.navigate("collection_detail/${folder.folderId}")
+                                        }
+                                    },
+                                    onLongClick = {
+                                        folderToDelete = folder
+                                        showDeleteFolderDialog = true
+                                    }
+                                )
                         ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp)
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                                ),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                Column(
+                                    modifier = Modifier.padding(16.dp)
                                 ) {
-                                    Text(
-                                        text = folder.name,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 18.sp,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Text(
-                                        text = "${noteCount}个内容",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(start = 8.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(12.dp))
-
-                                // 卡片标题预览
-                                val folderNotes = notes.filter { it.folderId == folder.folderId }
-                                if (folderNotes.isNotEmpty()) {
-                                    LazyRow(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        items(folderNotes.take(3), key = { it.noteId }) { note ->
-                                            Text(
-                                                text = note.sourceTitle,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                fontSize = 12.sp,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier
-                                                    .combinedClickable(
-                                                        onClick = { /* 可以跳转到详情页 */ },
-                                                        onLongClick = {
-                                                            noteToDelete = note
-                                                            showDeleteNoteDialog = true
-                                                        }
-                                                    )
-                                                    .background(
-                                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                                                        RoundedCornerShape(4.dp)
-                                                    )
-                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                                            )
+                                        Text(
+                                            text = folder.name,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 18.sp,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            text = "${noteCount}个内容",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 16.sp,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.padding(start = 8.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    // 卡片标题预览
+                                    val folderNotes = notes.filter { it.folderId == folder.folderId }
+                                    if (folderNotes.isNotEmpty()) {
+                                        LazyRow(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            items(folderNotes.take(3), key = { it.noteId }) { note ->
+                                                Text(
+                                                    text = note.sourceTitle,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    fontSize = 12.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier
+                                                        .combinedClickable(
+                                                            onClick = { /* 可以跳转到详情页 */ },
+                                                            onLongClick = {
+                                                                noteToDelete = note
+                                                                showDeleteNoteDialog = true
+                                                            }
+                                                        )
+                                                        .background(
+                                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                                            RoundedCornerShape(4.dp)
+                                                        )
+                                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -299,8 +312,9 @@ fun CollectionListScreen(
                     }
                 }
 
-                // 空状态提示
-                if (folders.isEmpty()) {
+                // ====================== 关键修改2 ======================
+                // 空状态：判断过滤后的列表为空，而不是原始列表
+                if (filteredFolders.isEmpty()) {
                     item {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -323,6 +337,7 @@ fun CollectionListScreen(
                         }
                     }
                 }
+                // ======================================================
 
                 // 底部新建收藏夹按钮
                 item {
@@ -406,7 +421,7 @@ fun CollectionListScreen(
         // 删除收藏夹对话框
         if (showDeleteFolderDialog && folderToDelete != null) {
             AlertDialog(
-                onDismissRequest = { 
+                onDismissRequest = {
                     showDeleteFolderDialog = false
                     folderToDelete = null
                 },
@@ -438,7 +453,7 @@ fun CollectionListScreen(
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { 
+                    TextButton(onClick = {
                         showDeleteFolderDialog = false
                         folderToDelete = null
                     }) {
@@ -451,7 +466,7 @@ fun CollectionListScreen(
         // 删除卡片对话框
         if (showDeleteNoteDialog && noteToDelete != null) {
             AlertDialog(
-                onDismissRequest = { 
+                onDismissRequest = {
                     showDeleteNoteDialog = false
                     noteToDelete = null
                 },
@@ -483,7 +498,7 @@ fun CollectionListScreen(
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { 
+                    TextButton(onClick = {
                         showDeleteNoteDialog = false
                         noteToDelete = null
                     }) {

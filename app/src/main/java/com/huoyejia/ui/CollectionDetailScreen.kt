@@ -84,9 +84,30 @@ fun CollectionDetailScreen(
     folders: List<FolderEntity>,
     onDeleteNote: (String) -> Unit = {}
 ) {
+    // 验证输入参数
+    if (folderId.isBlank()) {
+        // 处理无效的folderId
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "无效的收藏夹ID",
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+        return
+    }
+    
     val folder = folders.firstOrNull { folder -> folder.folderId == folderId }
     val folderName = folder?.name ?: "未知收藏夹"
-    val filteredNotes = notes.filter { it.folderId == folderId }
+    val filteredNotes = if (notes.isNotEmpty()) {
+        notes.filter { it.folderId == folderId }
+    } else {
+        emptyList()
+    }
     var showDeleteNoteDialog by remember { mutableStateOf(false) }
     var noteToDelete by remember { mutableStateOf<NoteEntity?>(null) }
 
@@ -111,16 +132,16 @@ fun CollectionDetailScreen(
                     }
                 },
                 actions = {
-                    // 搜索图标按钮
-                    IconButton(onClick = {
-                        navController.navigate("search")
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "搜索",
-                            tint = MaterialTheme.colorScheme.onPrimary
-                        )
-                    }
+                    // 搜索功能已禁用，暂时移除搜索按钮
+                    // IconButton(onClick = {
+                    //     navController.navigate("search")
+                    // }) {
+                    //     Icon(
+                    //         imageVector = Icons.Default.Search,
+                    //         contentDescription = "搜索",
+                    //         tint = MaterialTheme.colorScheme.onPrimary
+                    //     )
+                    // }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,

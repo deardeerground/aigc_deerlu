@@ -76,7 +76,9 @@ class MainActivity : ComponentActivity() {
                                 navController = navController,
                                 notes = notes,
                                 folders = folders,
-                                onCreateFolder = viewModel::createFolder
+                                onCreateFolder = viewModel::createFolder,
+                                onDeleteFolder = viewModel::deleteFolder,
+                                onDeleteNote = viewModel::deleteNote
                             )
                         }
                         composable("capture") {
@@ -94,6 +96,9 @@ class MainActivity : ComponentActivity() {
                                 onPendingCaptureConsumed = {
                                     pendingCapture = null
                                     openCaptureRequested = false
+                                },
+                                onSaveComplete = {
+                                    // 不自动导航，让用户手动返回
                                 }
                             )
                         }
