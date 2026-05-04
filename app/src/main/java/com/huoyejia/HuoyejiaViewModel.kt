@@ -100,12 +100,13 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
 
     fun deleteFolder(folderId: String) {
         viewModelScope.launch {
-            container.folderRepository.deleteFolder(folderId)
-            // 将该文件夹内的笔记 folderId 设为 null
             val notesInFolder = notes.value.filter { it.folderId == folderId }
             notesInFolder.forEach { note ->
-                container.noteRepository.upsert(note.copy(folderId = null))
+                container.relationRepository.deleteForNote(note.noteId)
+                container.reviewCardRepository.deleteForNote(note.noteId)
+                container.noteRepository.deleteNote(note.noteId)
             }
+            container.folderRepository.deleteFolder(folderId)
         }
     }
 

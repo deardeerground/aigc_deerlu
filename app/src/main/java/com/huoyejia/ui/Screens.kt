@@ -7,6 +7,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.RepeatMode
@@ -16,6 +17,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -50,6 +53,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,9 +63,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -1156,17 +1162,13 @@ private fun SourceMaterialCard(note: NoteEntity) {
                 )
             }
             if (!note.imagePath.isNullOrBlank()) {
-                SourceLine(
-                    label = "原文截图",
-                    value = note.imagePath,
-                    onLongClick = { copyText(context, "截图路径", note.imagePath) }
-                )
-                TinyText("截图文件已保存，后续可接入图片预览和 OCR 高亮。")
+                ImageSection(imagePath = note.imagePath)
             }
             SourceLine(
                 label = "原文",
                 value = originalText,
                 maxLines = 6,
+                canExpand = true,
                 onLongClick = { copyText(context, "原文", originalText) }
             )
         }
@@ -1178,24 +1180,126 @@ private fun SourceLine(
     label: String,
     value: String,
     maxLines: Int = 3,
+    canExpand: Boolean = false,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null
 ) {
+    var expanded by remember { mutableStateOf(false) }
+    val isTextLong = value.lines().size > maxLines || value.length > 50
+    val showExpand = canExpand && isTextLong
+
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
-        Text(
-            value,
-            modifier = Modifier.combinedClickable(
-                onClick = { onClick?.invoke() },
-                onLongClick = { onLongClick?.invoke() }
-            ),
-            maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
-            lineHeight = 20.sp,
-            color = if (onClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-        )
+        if (showExpand && !expanded) {
+            Text(label, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    value,
+                    modifier = Modifier
+                        .combinedClickable(
+                            onClick = { onClick?.invoke() },
+                            onLongClick = { onLongClick?.invoke() }
+                        )
+                        .padding(end = 60.dp),
+                    maxLines = maxLines,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 20.sp,
+                    color = if (onClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                )
+                TextButton(
+                    onClick = { expanded = true },
+                    modifier = Modifier.align(Alignment.BottomEnd)
+                ) {
+                    Text("展开")
+                }
+            }
+        } else {
+            Text(label, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+            Text(
+                value,
+                modifier = Modifier.combinedClickable(
+                    onClick = { onClick?.invoke() },
+                    onLongClick = { onLongClick?.invoke() }
+                ),
+                maxLines = if (expanded) Int.MAX_VALUE else maxLines,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 20.sp,
+                color = if (onClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+            )
+            if (expanded) {
+                TextButton(onClick = { expanded = false }) {
+                    Text("收起")
+                }
+            }
+        }
     }
 }
+
+@Composable
+private fun ImageSection(imagePath: String) {
+    var showPreview by remember { mutableStateOf(false) }
+    var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var showFullScreen by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    LaunchedEffect(showPreview, imagePath) {
+        if (showPreview) {
+            val file = if (imagePath.startsWith("/")) File(imagePath) else File(context.filesDir, imagePath)
+            if (file.exists()) {
+                bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+            }
+        }
+    }
+
+    if (showFullScreen && bitmap != null) {
+        Dialog(
+            onDismissRequest = { showFullScreen = false }
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+                    .clickable { showFullScreen = false },
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    bitmap = bitmap!!.asImageBitmap(),
+                    contentDescription = "截图大图",
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("原文截图", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+        if (showPreview && bitmap != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(150.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { showFullScreen = true }
+            ) {
+                Image(
+                    bitmap = bitmap!!.asImageBitmap(),
+                    contentDescription = "截图预览",
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            TextButton(onClick = { showPreview = false }) {
+                Text("收起预览")
+            }
+        } else {
+            OutlinedButton(
+                onClick = { showPreview = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("查看截图")
+            }
+        }
+    }
+}
+
 
 @Composable
 private fun ClickableTagSection(
