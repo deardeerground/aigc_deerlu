@@ -1,11 +1,13 @@
 package com.huoyejia.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -26,8 +28,6 @@ private val tabs = listOf(
     Tab("collections", "回流箱", "↺"),
     Tab("capture", "采集", "+"),
     Tab("review", "复习", "✓"),
-    Tab("history", "历史", "⌕"),
-    Tab("explain", "讲解", "▶"),
     Tab("dashboard", "指数", "#")
 )
 
@@ -78,11 +78,20 @@ fun HuoyejiaScaffold(
         ) {
             content(PaddingValues(0.dp))
             if (isBusy) {
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 0.dp)
-                )
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        "正在存储并生成AI摘要",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.primary)
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
             }
         }
     }

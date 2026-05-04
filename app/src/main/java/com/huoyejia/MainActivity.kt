@@ -19,8 +19,7 @@ import com.huoyejia.ui.CaptureScreen
 import com.huoyejia.ui.CollectionDetailScreen
 import com.huoyejia.ui.CollectionListScreen
 import com.huoyejia.ui.DashboardScreen
-import com.huoyejia.ui.ExplainScreen
-import com.huoyejia.ui.HistoryScreen
+import com.huoyejia.ui.FolderPickerDialog
 import com.huoyejia.ui.HuoyejiaScaffold
 import com.huoyejia.ui.NoteDetailScreen
 import com.huoyejia.ui.ReviewScreen
@@ -40,11 +39,14 @@ class MainActivity : ComponentActivity() {
 
     private var pendingCapture by mutableStateOf<PendingCapture?>(null)
     private var openCaptureRequested by mutableStateOf(false)
+    private var floatingFolderPickerPending by mutableStateOf<PendingCapture?>(null)
+    private var launchFloatingAfterPermission = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingCapture = intent.toPendingCapture()
-        openCaptureRequested = intent.getBooleanExtra(EXTRA_NAV_CAPTURE, false)
+        floatingFolderPickerPending = pendingCapture?.takeIf { it.showFolderPicker }
+        openCaptureRequested = intent.getBooleanExtra(EXTRA_NAV_CAPTURE, false) || intent.isTextShare()
         setContent {
             HuoyejiaTheme {
                 val viewModel: HuoyejiaViewModel = viewModel()
@@ -55,6 +57,7 @@ class MainActivity : ComponentActivity() {
                 val stats by viewModel.stats.collectAsState()
                 val results by viewModel.searchResults.collectAsState()
                 val explainState by viewModel.explainState.collectAsState()
+                val cardAssistantState by viewModel.cardAssistantState.collectAsState()
                 val isBusy by viewModel.isBusy.collectAsState()
                 val folders by viewModel.folders.collectAsState()
                 val pending = pendingCapture
@@ -88,10 +91,11 @@ class MainActivity : ComponentActivity() {
                                 onOpenFloatingCapture = ::openFloatingCapture,
                                 folders = folders,
                                 onCreateFolder = viewModel::createFolder,
+                                isBusy = isBusy,
                                 pendingCaptureTitle = pending?.title,
                                 pendingCaptureText = pending?.text,
                                 pendingCaptureUrl = pending?.url,
-                                pendingCaptureShowFolderPicker = pending?.showFolderPicker == true,
+                                pendingCaptureShowFolderPicker = false,
                                 pendingCaptureRequestId = pending?.requestId,
                                 onPendingCaptureConsumed = {
                                     pendingCapture = null
@@ -116,26 +120,6 @@ class MainActivity : ComponentActivity() {
                                 onDone = viewModel::completeCard
                             )
                         }
-                        composable("history") {
-                            HistoryScreen(
-                                notes = notes,
-                                cards = cards,
-                                onOpenNote = { navController.navigate("detail/$it") },
-                                onDeleteNote = viewModel::deleteNote
-                            )
-                        }
-                        composable("explain") {
-                            ExplainScreen(
-                                notes = notes,
-                                explainState = explainState,
-                                onSelectNote = viewModel::selectExplainNote,
-                                onGenerate = viewModel::generateExplainPack,
-                                onExportPpt = viewModel::exportExplainPpt,
-                                onExportAnimation = viewModel::exportExplainAnimation,
-                                onGenerateVideo = viewModel::generateExplainVideo,
-                                onOpenNote = { navController.navigate("detail/$it") }
-                            )
-                        }
                         composable("dashboard") {
                             DashboardScreen(stats = stats, notes = notes, cards = cards)
                         }
@@ -156,12 +140,47 @@ class MainActivity : ComponentActivity() {
                                 notes = notes,
                                 relations = relations,
                                 cards = cards,
+                                explainState = explainState,
+                                assistantState = cardAssistantState,
                                 onBack = { navController.popBackStack() },
                                 onOpenNote = { navController.navigate("detail/$it") },
-                                onStartReview = { navController.navigate("review") }
+                                onStartReview = { navController.navigate("review") },
+                                onGeneratePpt = viewModel::generateCardPpt,
+                                onGenerateVideo = viewModel::generateCardVideo,
+                                onAskQuestion = viewModel::askCardQuestion
                             )
                         }
                     }
+                }
+                floatingFolderPickerPending?.let { capture ->
+                    FolderPickerDialog(
+                        folders = folders,
+                        onCreateFolder = viewModel::createFolder,
+                        onDismiss = {
+                            floatingFolderPickerPending = null
+                            pendingCapture = null
+                            openCaptureRequested = false
+                        },
+                        onConfirm = { folder ->
+                            val resolvedUrl = capture.url.trim()
+                            val resolvedText = capture.text.trim()
+                            val sourceType = when {
+                                resolvedUrl.startsWith("http://") || resolvedUrl.startsWith("https://") -> "web"
+                                else -> "manual"
+                            }
+                            viewModel.addCaptureNote(
+                                capture.title.ifBlank { "浮窗采集" },
+                                resolvedText,
+                                sourceType,
+                                resolvedUrl.ifBlank { null },
+                                null,
+                                folder.folderId
+                            )
+                            floatingFolderPickerPending = null
+                            pendingCapture = null
+                            openCaptureRequested = false
+                        }
+                    )
                 }
             }
         }
@@ -171,14 +190,23 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         pendingCapture = intent.toPendingCapture()
-        openCaptureRequested = intent.getBooleanExtra(EXTRA_NAV_CAPTURE, false)
+        floatingFolderPickerPending = pendingCapture?.takeIf { it.showFolderPicker }
+        openCaptureRequested = intent.getBooleanExtra(EXTRA_NAV_CAPTURE, false) || intent.isTextShare()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (launchFloatingAfterPermission && Settings.canDrawOverlays(this)) {
+            launchFloatingAfterPermission = false
+            startFloatingCaptureAndSendAppBack()
+        }
     }
 
     private fun openFloatingCapture() {
         if (Settings.canDrawOverlays(this)) {
-            FloatingCaptureService.start(this)
-            moveTaskToBack(true)
+            startFloatingCaptureAndSendAppBack()
         } else {
+            launchFloatingAfterPermission = true
             val intent = Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:$packageName")
@@ -187,18 +215,37 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun startFloatingCaptureAndSendAppBack() {
+        FloatingCaptureService.start(this)
+        moveTaskToBack(true)
+    }
+
     private fun Intent.toPendingCapture(): PendingCapture? {
-        if (!getBooleanExtra(EXTRA_OPEN_CAPTURE, false)) return null
-        val text = getStringExtra(EXTRA_CAPTURE_TEXT).orEmpty()
-        val url = getStringExtra(EXTRA_CAPTURE_URL).orEmpty()
+        val sharedText = getStringExtra(Intent.EXTRA_TEXT).orEmpty().trim()
+        if (!getBooleanExtra(EXTRA_OPEN_CAPTURE, false) && sharedText.isBlank()) return null
+        val explicitText = getStringExtra(EXTRA_CAPTURE_TEXT).orEmpty()
+        val explicitUrl = getStringExtra(EXTRA_CAPTURE_URL).orEmpty()
+        val sharedUrl = extractFirstUrl(sharedText).orEmpty()
+        val text = explicitText.ifBlank {
+            if (sharedUrl.isNotBlank() && sharedText == sharedUrl) "" else sharedText
+        }
+        val url = explicitUrl.ifBlank { sharedUrl }
         if (text.isBlank() && url.isBlank()) return null
         return PendingCapture(
             requestId = System.currentTimeMillis(),
-            title = getStringExtra(EXTRA_CAPTURE_TITLE).orEmpty(),
+            title = getStringExtra(EXTRA_CAPTURE_TITLE).orEmpty().ifBlank { "分享采集" },
             text = text,
             url = url,
             showFolderPicker = getBooleanExtra(EXTRA_PICK_FOLDER, true)
         )
+    }
+
+    private fun Intent.isTextShare(): Boolean {
+        return action == Intent.ACTION_SEND && type == "text/plain" && !getStringExtra(Intent.EXTRA_TEXT).isNullOrBlank()
+    }
+
+    private fun extractFirstUrl(text: String): String? {
+        return Regex("""https?://\S+""").find(text)?.value?.trimEnd('.', ',', ';', '。', '，', '；')
     }
 }
 

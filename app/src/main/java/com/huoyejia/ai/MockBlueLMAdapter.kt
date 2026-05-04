@@ -105,6 +105,25 @@ class MockBlueLMAdapter : BlueLMAdapter {
         )
     }
 
+    override suspend fun answerCardQuestion(
+        current: NoteEntity,
+        related: List<NoteEntity>,
+        question: String
+    ): String {
+        val summary = current.summary ?: current.noteContent.take(120).ifBlank { "这张卡片还没有足够内容。" }
+        val relatedText = related.take(2)
+            .joinToString("、") { it.sourceTitle }
+            .ifBlank { "暂无强关联卡片" }
+        return """
+            这是本地占位回答：$summary
+
+            你的问题是：$question
+            关联参考：$relatedText。
+
+            在 local.properties 配置 LLM_CHAT_BASE_URL、LLM_CHAT_API_KEY、LLM_CHAT_MODEL 后，这里会自动切换为真实 AI 回答。
+        """.trimIndent()
+    }
+
     override suspend fun generateSlideImage(prompt: String): ByteArray? = null
 
     override suspend fun generateAnimationHtml(pack: ExplainPack): String? = null

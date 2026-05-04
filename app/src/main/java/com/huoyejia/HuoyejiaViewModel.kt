@@ -8,6 +8,7 @@ import com.huoyejia.data.local.NoteEntity
 import com.huoyejia.data.local.NoteRelationEntity
 import com.huoyejia.data.local.ReviewCardEntity
 import com.huoyejia.data.local.UserStatsEntity
+import com.huoyejia.domain.CardAssistantState
  import com.huoyejia.domain.ExplainUiState
  import com.huoyejia.domain.ExplainPack
  import com.huoyejia.domain.ScoredNote
@@ -43,6 +44,9 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
 
     private val _isBusy = MutableStateFlow(false)
     val isBusy: StateFlow<Boolean> = _isBusy.asStateFlow()
+
+    private val _cardAssistantState = MutableStateFlow(CardAssistantState())
+    val cardAssistantState: StateFlow<CardAssistantState> = _cardAssistantState.asStateFlow()
 
     private val _explainState = MutableStateFlow(
         ExplainUiState(
@@ -300,6 +304,139 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
                 )
             }
         }
+    }
+
+    fun generateCardPpt(noteId: String) {
+        viewModelScope.launch {
+            val pack = ensureExplainPack(noteId) ?: return@launch
+            _explainState.value = _explainState.value.copy(
+                isExporting = true,
+                exportErrorMessage = null,
+                exportedPptPath = null
+            )
+            val file: File? = runCatching { container.pptExportService.export(pack) }.getOrNull()
+            _explainState.value = if (file != null) {
+                _explainState.value.copy(
+                    isExporting = false,
+                    exportedPptPath = file.absolutePath,
+                    providerLabel = container.blueLM.providerName,
+                    remoteReady = container.blueLM.remoteReady
+                )
+            } else {
+                _explainState.value.copy(
+                    isExporting = false,
+                    exportErrorMessage = "PPT 生成失败，请检查模型配置后重试。"
+                )
+            }
+        }
+    }
+
+    fun generateCardVideo(noteId: String) {
+        viewModelScope.launch {
+            val pack = ensureExplainPack(noteId) ?: return@launch
+            _explainState.value = _explainState.value.copy(
+                isVideoGenerating = true,
+                videoGenerationErrorMessage = null,
+                exportedVideoPath = null
+            )
+            val result = runCatching { container.videoGenerationService.generate(pack) }
+            val file: File? = result.getOrNull()
+            _explainState.value = if (file != null) {
+                _explainState.value.copy(
+                    isVideoGenerating = false,
+                    exportedVideoPath = file.absolutePath
+                )
+            } else {
+                _explainState.value.copy(
+                    isVideoGenerating = false,
+                    videoGenerationErrorMessage = result.exceptionOrNull()?.message ?: "视频生成失败，请配置视频 API 后重试。"
+                )
+            }
+        }
+    }
+
+    fun askCardQuestion(noteId: String, question: String) {
+        val cleanQuestion = question.trim()
+        if (noteId.isBlank() || cleanQuestion.isBlank()) return
+        viewModelScope.launch {
+            _cardAssistantState.value = CardAssistantState(
+                noteId = noteId,
+                isAsking = true,
+                question = cleanQuestion
+            )
+
+            val current = container.noteRepository.getNote(noteId)
+            if (current == null) {
+                _cardAssistantState.value = CardAssistantState(
+                    noteId = noteId,
+                    question = cleanQuestion,
+                    errorMessage = "卡片不存在，无法回答。"
+                )
+                return@launch
+            }
+
+            val related = container.relationRepository.getForNote(noteId)
+                .mapNotNull { relation ->
+                    val otherId = if (relation.noteIdFrom == noteId) relation.noteIdTo else relation.noteIdFrom
+                    container.noteRepository.getNote(otherId)
+                }
+                .distinctBy { it.noteId }
+                .take(5)
+
+            val answer = runCatching {
+                container.blueLM.answerCardQuestion(current, related, cleanQuestion)
+            }
+            _cardAssistantState.value = if (answer.isSuccess) {
+                CardAssistantState(
+                    noteId = noteId,
+                    question = cleanQuestion,
+                    answer = answer.getOrNull().orEmpty()
+                )
+            } else {
+                CardAssistantState(
+                    noteId = noteId,
+                    question = cleanQuestion,
+                    errorMessage = answer.exceptionOrNull()?.message ?: "AI 回答失败，请稍后重试。"
+                )
+            }
+        }
+    }
+
+    private suspend fun ensureExplainPack(noteId: String): ExplainPack? {
+        val current = _explainState.value
+        if (current.pack?.noteId == noteId) {
+            _explainState.value = current.copy(
+                selectedNoteId = noteId,
+                errorMessage = null,
+                providerLabel = container.blueLM.providerName,
+                remoteReady = container.blueLM.remoteReady
+            )
+            return current.pack
+        }
+        _explainState.value = current.copy(
+            selectedNoteId = noteId,
+            isGenerating = true,
+            errorMessage = null,
+            exportErrorMessage = null,
+            videoGenerationErrorMessage = null,
+            exportedPptPath = null,
+            exportedVideoPath = null
+        )
+        val pack = runCatching { container.explainService.generate(noteId) }.getOrNull()
+        _explainState.value = if (pack != null) {
+            _explainState.value.copy(
+                isGenerating = false,
+                pack = pack,
+                providerLabel = container.blueLM.providerName,
+                remoteReady = container.blueLM.remoteReady
+            )
+        } else {
+            _explainState.value.copy(
+                isGenerating = false,
+                errorMessage = "讲解结构生成失败，请检查模型配置或稍后重试。"
+            )
+        }
+        return pack
     }
 
     private suspend fun refreshStats() {

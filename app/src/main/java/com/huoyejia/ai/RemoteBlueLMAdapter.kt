@@ -201,6 +201,68 @@ class RemoteBlueLMAdapter(
         )
     }
 
+    override suspend fun answerCardQuestion(
+        current: NoteEntity,
+        related: List<NoteEntity>,
+        question: String
+    ): String {
+        return runRemoteOrFallback(
+            ready = config.chatReady,
+            remoteCall = {
+                withContext(Dispatchers.IO) {
+                    val messages = JSONArray()
+                        .put(
+                            JSONObject()
+                                .put("role", "system")
+                                .put(
+                                    "content",
+                                    """
+                                    你是学习卡片 AI 小助手。
+                                    只能基于给定的当前卡片、原文、AI摘要、标签、网址和关联卡片回答。
+                                    回答要清楚、简洁、适合学生理解；优先给结构化要点和可执行复习建议。
+                                    如果材料不足，不要编造，请说明还需要什么信息。
+                                    """.trimIndent()
+                                )
+                        )
+                        .put(
+                            JSONObject()
+                                .put("role", "user")
+                                .put(
+                                    "content",
+                                    """
+                                    当前卡片标题：${current.sourceTitle}
+                                    原文网址：${current.url.orEmpty()}
+                                    原文截图路径：${current.imagePath.orEmpty()}
+                                    原文：${current.rawText ?: current.noteContent}
+                                    AI摘要：${current.summary.orEmpty()}
+                                    标签JSON：${current.tags}
+                                    主题：${current.topic.orEmpty()}
+
+                                    关联卡片：
+                                    ${related.joinToString("\n\n") { "- ${it.sourceTitle}\n摘要：${it.summary.orEmpty()}\n内容：${it.noteContent.take(600)}" }}
+
+                                    用户问题：
+                                    $question
+                                    """.trimIndent()
+                                )
+                        )
+                    val payload = JSONObject()
+                        .put("model", config.chat.model)
+                        .put("temperature", 0.3)
+                        .put("messages", messages)
+                    val response = postJson(config.chat, "/chat/completions", payload)
+                    response
+                        .getJSONArray("choices")
+                        .getJSONObject(0)
+                        .getJSONObject("message")
+                        .optString("content")
+                        .ifBlank { "AI 暂时没有返回内容，请重试。" }
+                }
+            },
+            fallbackCall = { fallback.answerCardQuestion(current, related, question) }
+        )
+    }
+
     override suspend fun generateSlideImage(prompt: String): ByteArray? {
         if (!config.imageReady || prompt.isBlank()) return fallback.generateSlideImage(prompt)
         return runCatching {

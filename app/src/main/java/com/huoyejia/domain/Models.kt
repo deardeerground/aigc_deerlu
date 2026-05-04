@@ -84,3 +84,11 @@ data class ExplainUiState(
     val providerLabel: String = "",
     val remoteReady: Boolean = false
 )
+
+data class CardAssistantState(
+    val noteId: String? = null,
+    val isAsking: Boolean = false,
+    val question: String = "",
+    val answer: String = "",
+    val errorMessage: String? = null
+)

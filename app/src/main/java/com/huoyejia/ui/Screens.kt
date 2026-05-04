@@ -3,6 +3,9 @@
 package com.huoyejia.ui
 
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,7 +30,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -57,9 +62,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import kotlinx.coroutines.delay
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -68,6 +75,7 @@ import com.huoyejia.data.local.NoteRelationEntity
 import com.huoyejia.data.local.ReviewCardEntity
 import com.huoyejia.data.local.UserStatsEntity
 import com.huoyejia.data.local.FolderEntity
+import com.huoyejia.domain.CardAssistantState
 import com.huoyejia.domain.ExplainUiState
 import com.huoyejia.domain.ExplainPack
 import com.huoyejia.domain.ScoredNote
@@ -77,6 +85,7 @@ import java.util.UUID
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.delay
 
 @Composable
 fun InboxScreen(
@@ -154,6 +163,7 @@ fun CaptureScreen(
     onOpenFloatingCapture: () -> Unit,
     folders: List<FolderEntity>,
     onCreateFolder: (String) -> Unit,
+    isBusy: Boolean = false,
     pendingCaptureTitle: String? = null,
     pendingCaptureText: String? = null,
     pendingCaptureUrl: String? = null,
@@ -168,10 +178,9 @@ fun CaptureScreen(
     var url by remember { mutableStateOf("") }
     var screenshotUri by remember { mutableStateOf<String?>(null) }
     var showFolderPicker by remember { mutableStateOf(false) }
-    // 保持初始的showFolderPicker值，用于判断是否是浮窗采集
-    var initialShowFolderPicker by remember { mutableStateOf(false) }
-    // 控制延迟导航
-    var shouldNavigateBack by remember { mutableStateOf(false) }
+    var saveRequested by remember { mutableStateOf(false) }
+    var saveSawBusy by remember { mutableStateOf(false) }
+    var showSavedNotice by remember { mutableStateOf(false) }
     val screenshotPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
@@ -186,130 +195,158 @@ fun CaptureScreen(
             title = pendingCaptureTitle?.takeIf { it.isNotBlank() } ?: "浮窗采集"
             text = incomingText
             url = incomingUrl
-            initialShowFolderPicker = pendingCaptureShowFolderPicker
             showFolderPicker = pendingCaptureShowFolderPicker
-            onPendingCaptureConsumed()
+            if (!pendingCaptureShowFolderPicker) {
+                onPendingCaptureConsumed()
+            }
         }
     }
 
-    // 延迟导航返回，让用户看到保存结果
-    LaunchedEffect(shouldNavigateBack) {
-        if (shouldNavigateBack) {
+    LaunchedEffect(isBusy, saveRequested, saveSawBusy) {
+        if (saveRequested && isBusy) {
+            saveSawBusy = true
+        }
+        if (saveRequested && saveSawBusy && !isBusy) {
+            showSavedNotice = true
+            saveRequested = false
+            saveSawBusy = false
+            delay(1500)
+            showSavedNotice = false
+        }
+    }
+    LaunchedEffect(saveRequested) {
+        if (saveRequested && !isBusy && !saveSawBusy) {
             delay(500)
-            onSaveComplete()
+            if (saveRequested && !isBusy && !saveSawBusy) {
+                showSavedNotice = true
+                saveRequested = false
+                delay(1500)
+                showSavedNotice = false
+            }
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                SectionTitle("快速采集")
-                TinyText("先整理素材，再选择收藏夹并交给 AI 总结。")
-            }
-            Button(
-                onClick = onOpenFloatingCapture,
-                modifier = Modifier.size(54.dp),
-                shape = CircleShape,
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
-            ) {
-                Text("浮", fontWeight = FontWeight.Black)
-            }
+    fun saveToFolder(folderEntity: FolderEntity) {
+        val resolvedUrl = url.trim()
+        val resolvedText = text.trim()
+        val sourceType = when {
+            resolvedUrl.startsWith("http://") || resolvedUrl.startsWith("https://") -> "web"
+            screenshotUri != null -> "image"
+            else -> "manual"
         }
-
-        OutlinedTextField(
-            value = title,
-            onValueChange = { title = it },
-            label = { Text("标题") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
+        onSaveText(
+            title.ifBlank { "未命名学习材料" },
+            resolvedText,
+            sourceType,
+            resolvedUrl.ifBlank { null },
+            screenshotUri,
+            folderEntity.folderId
         )
+        saveRequested = true
+        showFolderPicker = false
+        onPendingCaptureConsumed()
+        onSaveComplete()
+    }
 
-        OutlinedTextField(
-            value = text,
-            onValueChange = { text = it },
-            label = { Text("粘贴学习内容 / 文章正文") },
-            minLines = 8,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        CaptureActionCard(
-            title = if (screenshotUri != null) "截图已加入" else "加入截图",
-            body = screenshotUri?.let { "已选择本地图片：${it.take(42)}..." } ?: "点击从本地相册/截图相册中选择图片，App 会复制一份用于 OCR。",
-            action = if (screenshotUri != null) "重新选择" else "选择截图",
-            onClick = { screenshotPicker.launch("image/*") }
-        )
-
-        OutlinedTextField(
-            value = url,
-            onValueChange = { url = it },
-            label = { Text("粘贴网址，可选") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Surface(
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .clickable(enabled = text.isNotBlank() || url.isNotBlank() || screenshotUri != null) { showFolderPicker = true },
-            shape = RoundedCornerShape(26.dp),
-            color = MaterialTheme.colorScheme.primary,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f))
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 18.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("存入活页夹 + AI总结", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Black, fontSize = 20.sp)
-Text(
-                "选择收藏夹后保存，系统会继续执行清洗、摘要、标签、关联旧笔记和复习卡生成。",
-                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.84f),
-                lineHeight = 20.sp
-            )
-        }
-    }
-
-    if (showFolderPicker) {
-        FolderPickerDialog(
-            folders = folders,
-            onCreateFolder = { name ->
-                onCreateFolder(name)
-            },
-            onDismiss = { showFolderPicker = false },
-            onConfirm = { folderEntity ->
-                if (folderEntity != null) {
-                    val resolvedUrl = url.trim()
-                    val resolvedText = buildCapturePayload(
-                        folder = folderEntity.name,
-                        title = title,
-                        text = text,
-                        url = resolvedUrl,
-                        imagePath = screenshotUri
-                    )
-                    val sourceType = when {
-                        resolvedUrl.startsWith("http://") || resolvedUrl.startsWith("https://") -> "web"
-                        screenshotUri != null -> "image"
-                        else -> "manual"
-                    }
-                    // 保存数据
-                    onSaveText(
-                        title.ifBlank { "未命名学习材料" },
-                        resolvedText,
-                        sourceType,
-                        resolvedUrl.ifBlank { null },
-                        screenshotUri,
-                        folderEntity.folderId
-                    )
-                    
-                    // 不立即关闭对话框，让用户手动返回
-                    // showFolderPicker = false
-                } else {
-                    showFolderPicker = false
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    SectionTitle("快速采集")
+                    TinyText("先整理素材，再选择收藏夹并交给 AI 总结。")
+                }
+                Button(
+                    onClick = onOpenFloatingCapture,
+                    modifier = Modifier.size(54.dp),
+                    shape = CircleShape,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                ) {
+                    Text("浮", fontWeight = FontWeight.Black)
                 }
             }
-        )
+
+            OutlinedTextField(
+                value = title,
+                onValueChange = { title = it },
+                label = { Text("标题") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("粘贴学习内容 / 文章正文") },
+                minLines = 8,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            CaptureActionCard(
+                title = if (screenshotUri != null) "截图已加入" else "加入截图",
+                body = screenshotUri?.let { "已选择本地图片：${it.take(42)}..." } ?: "点击从本地相册/截图相册中选择图片，App 会复制一份用于 OCR。",
+                action = if (screenshotUri != null) "重新选择" else "选择截图",
+                onClick = { screenshotPicker.launch("image/*") }
+            )
+
+            OutlinedTextField(
+                value = url,
+                onValueChange = { url = it },
+                label = { Text("粘贴网址，可选") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = text.isNotBlank() || url.isNotBlank() || screenshotUri != null) { showFolderPicker = true },
+                shape = RoundedCornerShape(26.dp),
+                color = MaterialTheme.colorScheme.primary,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f))
+            ) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("存入活页夹 + AI总结", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                    Text(
+                        "选择收藏夹后保存，系统会继续执行清洗、摘要、标签、关联旧笔记和复习卡生成。",
+                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.84f),
+                        lineHeight = 20.sp
+                    )
+                }
+            }
+        }
+
+        if (showFolderPicker) {
+            FolderPickerDialog(
+                folders = folders,
+                onCreateFolder = onCreateFolder,
+                onDismiss = {
+                    showFolderPicker = false
+                    onPendingCaptureConsumed()
+                },
+                onConfirm = ::saveToFolder
+            )
+        }
+        if (showSavedNotice) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Surface(
+                    shape = RoundedCornerShape(22.dp),
+                    color = MaterialTheme.colorScheme.inverseSurface
+                ) {
+                    Text(
+                        "已保存并生成摘要",
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                        color = MaterialTheme.colorScheme.inverseOnSurface,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -341,11 +378,11 @@ private fun CaptureActionCard(
 }
 
 @Composable
-private fun FolderPickerDialog(
+fun FolderPickerDialog(
     folders: List<FolderEntity>,
     onCreateFolder: (String) -> Unit,
     onDismiss: () -> Unit,
-    onConfirm: (FolderEntity?) -> Unit
+    onConfirm: (FolderEntity) -> Unit
 ) {
     var selectedFolder by remember(folders) { mutableStateOf(folders.firstOrNull()) }
     var creating by remember { mutableStateOf(false) }
@@ -353,6 +390,7 @@ private fun FolderPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(28.dp),
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("选择收藏夹", modifier = Modifier.weight(1f), fontWeight = FontWeight.Black)
@@ -382,7 +420,6 @@ private fun FolderPickerDialog(
                                     onCreateFolder(clean)
                                     newFolderName = ""
                                     creating = false
-                                    // 重建后刷新列表，让用户重新选择
                                     selectedFolder = null
                                 }
                             },
@@ -391,30 +428,67 @@ private fun FolderPickerDialog(
                         TextButton(onClick = { creating = false }) { Text("取消新建") }
                     }
                 }
-                folders.forEach { folder ->
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { selectedFolder = folder },
-                        shape = RoundedCornerShape(16.dp),
-                        color = if (selectedFolder?.folderId == folder.folderId) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, if (selectedFolder?.folderId == folder.folderId) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
-                    ) {
-                        Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(folder.name, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                            if (selectedFolder?.folderId == folder.folderId) Text("已选", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
+
+                LazyColumn(
+                    modifier = Modifier.height(260.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(folders, key = { it.folderId }) { folder ->
+                        FolderRow(
+                            folder = folder,
+                            selected = selectedFolder?.folderId == folder.folderId,
+                            onClick = { selectedFolder = folder }
+                        )
+                    }
+                    if (folders.isEmpty()) {
+                        item {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(18.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant
+                            ) {
+                                Text(
+                                    "暂无收藏夹，点右上角 + 新建。",
+                                    modifier = Modifier.padding(16.dp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(selectedFolder) }, enabled = selectedFolder != null) { Text("确认") }
+            Button(
+                onClick = { selectedFolder?.let(onConfirm) },
+                enabled = selectedFolder != null
+            ) { Text("确认") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("取消") }
         }
     )
+}
+
+@Composable
+private fun FolderRow(
+    folder: FolderEntity,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
+    ) {
+        Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(folder.name, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+            if (selected) Text("已选", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
+        }
+    }
 }
 
 private fun buildCapturePayload(
@@ -954,9 +1028,14 @@ fun NoteDetailScreen(
     notes: List<NoteEntity>,
     relations: List<NoteRelationEntity>,
     cards: List<ReviewCardEntity>,
+    explainState: ExplainUiState,
+    assistantState: CardAssistantState,
     onBack: () -> Unit,
     onOpenNote: (String) -> Unit,
-    onStartReview: () -> Unit
+    onStartReview: () -> Unit,
+    onGeneratePpt: (String) -> Unit,
+    onGenerateVideo: (String) -> Unit,
+    onAskQuestion: (String, String) -> Unit
 ) {
     if (note == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -971,6 +1050,17 @@ fun NoteDetailScreen(
     }
     val card = cards.firstOrNull { it.noteId == note.noteId }
     val duplicateCount = relatedRelations.duplicateCountFor(note.noteId)
+    val context = LocalContext.current
+    val tags = JsonText.decodeList(note.tags).take(3)
+    var selectedTag by remember(note.noteId) { mutableStateOf<String?>(null) }
+    var assistantInput by remember(note.noteId) { mutableStateOf("") }
+    val sameTagNotes = selectedTag?.let { tag ->
+        notes.filter { candidate -> JsonText.decodeList(candidate.tags).contains(tag) }
+    }.orEmpty()
+    val explainForThis = explainState.selectedNoteId == note.noteId || explainState.pack?.noteId == note.noteId
+    val pptPath = explainState.exportedPptPath?.takeIf { explainForThis }
+    val videoPath = explainState.exportedVideoPath?.takeIf { explainForThis }
+    val assistantForThis = if (assistantState.noteId == note.noteId) assistantState else CardAssistantState()
 
     Column(
         modifier = Modifier
@@ -981,6 +1071,7 @@ fun NoteDetailScreen(
     ) {
         OutlinedButton(onClick = onBack) { Text("返回") }
         SectionTitle(note.sourceTitle)
+        SourceMaterialCard(note)
         if (note.duplicateScore >= 0.45f || duplicateCount > 0) {
             DuplicateWarningCard(
                 duplicateCount = maxOf(duplicateCount, 1),
@@ -990,15 +1081,383 @@ fun NoteDetailScreen(
                 onStartReview = onStartReview
             )
         }
-        AssistCard("AI 摘要", note.summary.orEmpty())
-        TagRow(JsonText.decodeList(note.tags))
-        AssistCard("统一内容", note.noteContent)
-        AssistCard("回流问题", card?.question ?: "暂无卡片")
-        SectionTitle("关联推荐")
-        relatedNotes.forEach { (relation, related) ->
-            RelationCard(relation = relation, note = related, onClick = { onOpenNote(related.noteId) })
+        AssistCard("AI 摘要", note.summary.orEmpty(), markdown = true)
+        ClickableTagSection(
+            tags = tags,
+            selectedTag = selectedTag,
+            onSelectTag = { selectedTag = it }
+        )
+        selectedTag?.let { tag ->
+            TagCollectionPanel(
+                tag = tag,
+                notes = sameTagNotes,
+                onOpenNote = onOpenNote,
+                onBack = { selectedTag = null }
+            )
+        }
+        ExplainActionsCard(
+            explainState = explainState,
+            explainForThis = explainForThis,
+            pptPath = pptPath,
+            videoPath = videoPath,
+            onGeneratePpt = { onGeneratePpt(note.noteId) },
+            onGenerateVideo = { onGenerateVideo(note.noteId) },
+            onSharePpt = { path -> shareFile(context, path, "application/vnd.openxmlformats-officedocument.presentationml.presentation", "分享PPT") },
+            onShareVideo = { path -> shareFile(context, path, "video/mp4", "分享讲解视频") }
+        )
+        AiAssistantCard(
+            note = note,
+            relatedNotes = relatedNotes.map { it.second },
+            reviewCard = card,
+            input = assistantInput,
+            answer = assistantForThis.answer,
+            isAsking = assistantForThis.isAsking,
+            errorMessage = assistantForThis.errorMessage,
+            onInputChange = { assistantInput = it },
+            onAsk = { question ->
+                assistantInput = question
+                onAskQuestion(note.noteId, question)
+            }
+        )
+        SectionTitle("关联的卡片")
+        if (relatedNotes.isEmpty()) {
+            AssistCard("暂无关联", "新收藏处理后，AI 会根据相似度、主题和因果关系把相关卡片放到这里。")
+        } else {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(relatedNotes, key = { it.second.noteId }) { (relation, related) ->
+                    RelatedCardSlide(
+                        relation = relation,
+                        note = related,
+                        onClick = { onOpenNote(related.noteId) }
+                    )
+                }
+            }
         }
     }
+}
+
+@Composable
+private fun SourceMaterialCard(note: NoteEntity) {
+    val context = LocalContext.current
+    val originalText = cleanOriginalText(note.rawText ?: note.noteContent.ifBlank { "暂无原文内容" })
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("原文材料", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
+            if (!note.url.isNullOrBlank()) {
+                SourceLine(
+                    label = "原文网址",
+                    value = note.url,
+                    onClick = { openUrl(context, note.url) },
+                    onLongClick = { copyText(context, "原文网址", note.url) }
+                )
+            }
+            if (!note.imagePath.isNullOrBlank()) {
+                SourceLine(
+                    label = "原文截图",
+                    value = note.imagePath,
+                    onLongClick = { copyText(context, "截图路径", note.imagePath) }
+                )
+                TinyText("截图文件已保存，后续可接入图片预览和 OCR 高亮。")
+            }
+            SourceLine(
+                label = "原文",
+                value = originalText,
+                maxLines = 6,
+                onLongClick = { copyText(context, "原文", originalText) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SourceLine(
+    label: String,
+    value: String,
+    maxLines: Int = 3,
+    onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+        Text(
+            value,
+            modifier = Modifier.combinedClickable(
+                onClick = { onClick?.invoke() },
+                onLongClick = { onLongClick?.invoke() }
+            ),
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis,
+            lineHeight = 20.sp,
+            color = if (onClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+@Composable
+private fun ClickableTagSection(
+    tags: List<String>,
+    selectedTag: String?,
+    onSelectTag: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("AI 识别标签", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        if (tags.isEmpty()) {
+            TinyText("暂无标签")
+        } else {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                tags.forEach { tag ->
+                    Surface(
+                        modifier = Modifier.clickable { onSelectTag(tag) },
+                        shape = RoundedCornerShape(50),
+                        color = if (tag == selectedTag) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiaryContainer,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f))
+                    ) {
+                        Text(
+                            tag,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                            color = if (tag == selectedTag) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onTertiaryContainer,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TagCollectionPanel(
+    tag: String,
+    notes: List<NoteEntity>,
+    onOpenNote: (String) -> Unit,
+    onBack: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) {
+        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("标签「$tag」共 ${notes.size} 篇收藏", modifier = Modifier.weight(1f), fontWeight = FontWeight.Black)
+                TextButton(onClick = onBack) { Text("返回") }
+            }
+            notes.forEach { item ->
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenNote(item.noteId) },
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface
+                ) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(item.sourceTitle, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(item.summary ?: item.noteContent, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 18.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExplainActionsCard(
+    explainState: ExplainUiState,
+    explainForThis: Boolean,
+    pptPath: String?,
+    videoPath: String?,
+    onGeneratePpt: () -> Unit,
+    onGenerateVideo: () -> Unit,
+    onSharePpt: (String) -> Unit,
+    onShareVideo: (String) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("讲解", fontSize = 22.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
+            Text("接入 AI 后可基于本卡片生成讲解结构、PPT 和视频；视频接口未配置时会提示缺少 API key。", lineHeight = 20.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button(
+                    onClick = onGeneratePpt,
+                    enabled = !(explainForThis && (explainState.isGenerating || explainState.isExporting)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        when {
+                            explainForThis && explainState.isGenerating -> "生成讲解中..."
+                            explainForThis && explainState.isExporting -> "导出PPT中..."
+                            else -> "PPT"
+                        }
+                    )
+                }
+                OutlinedButton(
+                    onClick = onGenerateVideo,
+                    enabled = !(explainForThis && (explainState.isGenerating || explainState.isVideoGenerating)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(if (explainForThis && explainState.isVideoGenerating) "视频生成中..." else "视频")
+                }
+            }
+            pptPath?.let { path ->
+                OutlinedButton(onClick = { onSharePpt(path) }) { Text("PPT 已生成，点击分享") }
+                TinyText(path)
+            }
+            videoPath?.let { path ->
+                OutlinedButton(onClick = { onShareVideo(path) }) { Text("视频已生成，点击分享") }
+                TinyText(path)
+            }
+            if (explainForThis) {
+                explainState.errorMessage?.let { AssistCard("讲解生成失败", it) }
+                explainState.exportErrorMessage?.let { AssistCard("PPT 生成失败", it) }
+                explainState.videoGenerationErrorMessage?.let { AssistCard("视频生成失败", it) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiAssistantCard(
+    note: NoteEntity,
+    relatedNotes: List<NoteEntity>,
+    reviewCard: ReviewCardEntity?,
+    input: String,
+    answer: String,
+    isAsking: Boolean,
+    errorMessage: String?,
+    onInputChange: (String) -> Unit,
+    onAsk: (String) -> Unit
+) {
+    val questions = suggestedQuestions(note, relatedNotes, reviewCard)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("AI 小助手", fontSize = 22.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSecondaryContainer)
+            Text("你可能想问的问题", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                questions.forEach { question ->
+                    Surface(
+                        modifier = Modifier.clickable { onAsk(question) },
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.surface
+                    ) {
+                        Text(question, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), fontSize = 13.sp)
+                    }
+                }
+            }
+            OutlinedTextField(
+                value = input,
+                onValueChange = onInputChange,
+                label = { Text("输入你想问的内容") },
+                minLines = 2,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Button(
+                onClick = { onAsk(input.trim()) },
+                enabled = input.isNotBlank() && !isAsking
+            ) { Text(if (isAsking) "AI 正在思考..." else "提问") }
+            if (isAsking) {
+                TinyText("正在把当前卡片、原文、AI 摘要、标签和关联卡片发送给 AI...")
+            }
+            errorMessage?.let {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.errorContainer
+                ) {
+                    Text(
+                        it,
+                        modifier = Modifier.padding(14.dp),
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        lineHeight = 20.sp
+                    )
+                }
+            }
+            if (answer.isNotBlank()) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surface
+                ) {
+                    MarkdownText(answer, modifier = Modifier.padding(14.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RelatedCardSlide(
+    relation: NoteRelationEntity,
+    note: NoteEntity,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .width(260.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatusChip("${relation.relationType} ${(relation.confidence * 100).toInt()}%")
+            Text(note.sourceTitle, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(note.summary ?: note.noteContent, maxLines = 4, overflow = TextOverflow.Ellipsis, lineHeight = 18.sp)
+            TinyText("点击查看这张关联卡片")
+        }
+    }
+}
+
+private fun suggestedQuestions(
+    note: NoteEntity,
+    relatedNotes: List<NoteEntity>,
+    reviewCard: ReviewCardEntity?
+): List<String> {
+    val topic = note.topic?.takeIf { it.isNotBlank() } ?: "这个知识点"
+    return listOfNotNull(
+        reviewCard?.question,
+        "$topic 的核心结论是什么？",
+        "这条内容和已有收藏有什么关系？".takeIf { relatedNotes.isNotEmpty() },
+        "我应该怎么复述这张卡片？"
+    ).distinct().take(4)
+}
+
+private fun cleanOriginalText(text: String): String {
+    return text
+        .lines()
+        .filterNot { line ->
+            val trimmed = line.trim()
+            trimmed.startsWith("收藏夹：") ||
+                trimmed.startsWith("标题：") ||
+                trimmed.startsWith("学习网址：") ||
+                trimmed.startsWith("截图：") ||
+                trimmed == "学习内容：" ||
+                trimmed == "请结合网址内容生成核心摘要、结构化要点和可复习问题。"
+        }
+        .joinToString("\n")
+        .trim()
+        .ifBlank { text.trim() }
+}
+
+private fun openUrl(context: Context, url: String) {
+    runCatching {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }
+}
+
+private fun copyText(context: Context, label: String, text: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
 }
 
 @Composable
@@ -1117,7 +1576,7 @@ private fun RelationCard(relation: NoteRelationEntity, note: NoteEntity, onClick
 }
 
 @Composable
-private fun AssistCard(title: String, body: String) {
+private fun AssistCard(title: String, body: String, markdown: Boolean = false) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
@@ -1125,9 +1584,34 @@ private fun AssistCard(title: String, body: String) {
     ) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            Text(body.ifBlank { "暂无内容" }, lineHeight = 20.sp)
+            if (markdown) {
+                MarkdownText(body.ifBlank { "暂无内容" })
+            } else {
+                Text(body.ifBlank { "暂无内容" }, lineHeight = 20.sp)
+            }
         }
     }
+}
+
+@Composable
+private fun MarkdownText(text: String, modifier: Modifier = Modifier) {
+    Text(parseSimpleMarkdown(text), modifier = modifier, lineHeight = 20.sp)
+}
+
+private fun parseSimpleMarkdown(text: String) = buildAnnotatedString {
+    val normalized = text
+        .replace(Regex("(?m)^\\s*#{1,6}\\s*"), "")
+        .replace(Regex("(?m)^\\s*[-*]\\s+"), "• ")
+    var index = 0
+    val boldPattern = Regex("\\*\\*(.+?)\\*\\*")
+    boldPattern.findAll(normalized).forEach { match ->
+        append(normalized.substring(index, match.range.first))
+        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+            append(match.groupValues[1])
+        }
+        index = match.range.last + 1
+    }
+    append(normalized.substring(index))
 }
 
 @Composable
@@ -1147,7 +1631,7 @@ private fun MetricPill(label: String, value: String) {
 @Composable
 private fun TagRow(tags: List<String>) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        tags.forEach { tag -> StatusChip(tag) }
+        tags.take(3).forEach { tag -> StatusChip(tag) }
     }
 }
 

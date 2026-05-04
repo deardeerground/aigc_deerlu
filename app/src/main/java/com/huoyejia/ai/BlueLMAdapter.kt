@@ -15,6 +15,7 @@ interface BlueLMAdapter {
     suspend fun classifyRelation(a: NoteEntity, b: NoteEntity, similarity: Float): RelationAiResult?
     suspend fun generateReviewCard(current: NoteEntity, related: List<NoteEntity>, relationHint: String): ReviewCardDraft
     suspend fun generateExplainPack(current: NoteEntity, related: List<NoteEntity>): ExplainPack
+    suspend fun answerCardQuestion(current: NoteEntity, related: List<NoteEntity>, question: String): String
     suspend fun generateSlideImage(prompt: String): ByteArray?
     suspend fun generateAnimationHtml(pack: ExplainPack): String?
 }
