@@ -43,6 +43,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -541,10 +542,10 @@ private fun copyImageToCaptureStorage(context: android.content.Context, uri: Uri
 
 /**
  * 搜索页面 - 已禁用
- * 
+ *
  * 此搜索功能已被暂时禁用。如果您需要重新启用此功能，
  * 请取消注释以下代码并确保相关的导航路由也已启用。
- * 
+ *
  * @Composable
  * fun SearchScreen(
  *     results: List<ScoredNote>,
@@ -1091,7 +1092,9 @@ fun NoteDetailScreen(
                 onStartReview = onStartReview
             )
         }
+        SelectionContainer {
         AssistCard("AI 摘要", note.summary.orEmpty(), markdown = true)
+    }
         ClickableTagSection(
             tags = tags,
             selectedTag = selectedTag,
@@ -1161,8 +1164,7 @@ private fun SourceMaterialCard(note: NoteEntity) {
                 SourceLine(
                     label = "原文网址",
                     value = note.url,
-                    onClick = { openUrl(context, note.url) },
-                    onLongClick = { copyText(context, "原文网址", note.url) }
+                    onClick = { openUrl(context, note.url) }
                 )
             }
             if (!note.imagePath.isNullOrBlank()) {
@@ -1172,8 +1174,7 @@ private fun SourceMaterialCard(note: NoteEntity) {
                 label = "原文",
                 value = originalText,
                 maxLines = 6,
-                canExpand = true,
-                onLongClick = { copyText(context, "原文", originalText) }
+                canExpand = true
             )
         }
     }
@@ -1185,53 +1186,44 @@ private fun SourceLine(
     value: String,
     maxLines: Int = 3,
     canExpand: Boolean = false,
-    onClick: (() -> Unit)? = null,
-    onLongClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
     val isTextLong = value.lines().size > maxLines || value.length > 50
     val showExpand = canExpand && isTextLong
 
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (showExpand && !expanded) {
-            Text(label, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
-            Box(modifier = Modifier.fillMaxWidth()) {
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                label,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.secondary
+            )
+            SelectionContainer {
                 Text(
                     value,
                     modifier = Modifier
-                        .combinedClickable(
-                            onClick = { onClick?.invoke() },
-                            onLongClick = { onLongClick?.invoke() }
-                        )
-                        .padding(end = 60.dp),
-                    maxLines = maxLines,
+                        .fillMaxWidth()
+                        .then(
+                            if (onClick != null) Modifier.clickable { onClick() } else Modifier
+                        ),
+                    maxLines = if (expanded) Int.MAX_VALUE else maxLines,
                     overflow = TextOverflow.Ellipsis,
                     lineHeight = 20.sp,
                     color = if (onClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                 )
-                TextButton(
-                    onClick = { expanded = true },
-                    modifier = Modifier.align(Alignment.BottomEnd)
-                ) {
-                    Text("展开")
-                }
             }
-        } else {
-            Text(label, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
-            Text(
-                value,
-                modifier = Modifier.combinedClickable(
-                    onClick = { onClick?.invoke() },
-                    onLongClick = { onLongClick?.invoke() }
-                ),
-                maxLines = if (expanded) Int.MAX_VALUE else maxLines,
-                overflow = TextOverflow.Ellipsis,
-                lineHeight = 20.sp,
-                color = if (onClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-            )
-            if (expanded) {
-                TextButton(onClick = { expanded = false }) {
-                    Text("收起")
+            if (showExpand) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = { expanded = !expanded }) {
+                        Text(
+                            text = if (expanded) "收起" else "展开",
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
         }
@@ -1264,7 +1256,6 @@ private fun ImageSection(imagePath: String) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black)
                     .pointerInput(Unit) {
                         detectTransformGestures { _, pan, zoom, _ ->
                             scale = (scale * zoom).coerceIn(0.5f, 4f)
@@ -1330,22 +1321,24 @@ private fun ClickableTagSection(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("AI 识别标签", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         if (tags.isEmpty()) {
-            TinyText("暂无标签")
+            SelectionContainer { TinyText("暂无标签") }
         } else {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                tags.forEach { tag ->
-                    Surface(
-                        modifier = Modifier.clickable { onSelectTag(tag) },
-                        shape = RoundedCornerShape(50),
-                        color = if (tag == selectedTag) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiaryContainer,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f))
-                    ) {
-                        Text(
-                            tag,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                            color = if (tag == selectedTag) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onTertiaryContainer,
-                            fontWeight = FontWeight.Bold
-                        )
+            SelectionContainer {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    tags.forEach { tag ->
+                        Surface(
+                            modifier = Modifier.clickable { onSelectTag(tag) },
+                            shape = RoundedCornerShape(50),
+                            color = if (tag == selectedTag) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiaryContainer,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f))
+                        ) {
+                            Text(
+                                tag,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                color = if (tag == selectedTag) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onTertiaryContainer,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
@@ -1465,7 +1458,7 @@ private fun AiAssistantCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("AI 小助手", fontSize = 22.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSecondaryContainer)
+Text("AI 小助手", fontSize = 22.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSecondaryContainer)
             Text("你可能想问的问题", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 questions.forEach { question ->
@@ -1507,17 +1500,20 @@ private fun AiAssistantCard(
                 }
             }
             if (answer.isNotBlank()) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    color = MaterialTheme.colorScheme.surface
-                ) {
-                    MarkdownText(answer, modifier = Modifier.padding(14.dp))
+                SelectionContainer {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.surface
+                    ) {
+                        MarkdownText(answer, modifier = Modifier.padding(14.dp))
+                    }
                 }
             }
-        }
+}
     }
 }
+
 
 @Composable
 private fun RelatedCardSlide(
