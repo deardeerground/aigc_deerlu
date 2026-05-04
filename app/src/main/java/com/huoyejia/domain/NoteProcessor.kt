@@ -5,6 +5,7 @@ import android.net.Uri
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
+import com.huoyejia.NoteProcessingScheduler
 import com.huoyejia.ai.BlueLMAdapter
 import com.huoyejia.data.NoteRepository
 import com.huoyejia.data.RelationRepository
@@ -16,7 +17,14 @@ import com.huoyejia.data.local.NoteRelationEntity
 import com.huoyejia.data.local.ReviewCardEntity
 import com.huoyejia.util.JsonText
 import com.huoyejia.util.VectorCodec
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -31,8 +39,13 @@ class NoteProcessor(
     private val relationRepository: RelationRepository,
     private val reviewCardRepository: ReviewCardRepository,
     private val blueLM: BlueLMAdapter,
-    private val folderRepository: FolderRepository
+    private val folderRepository: FolderRepository,
+    private val backgroundScope: CoroutineScope
 ) {
+    private val activeNoteIds = ConcurrentHashMap.newKeySet<String>()
+    private val _processingProgress = MutableStateFlow<List<NoteProcessingProgress>>(emptyList())
+    val processingProgress: StateFlow<List<NoteProcessingProgress>> = _processingProgress.asStateFlow()
+
     suspend fun captureAndProcess(
         rawText: String,
         imagePath: String?,
@@ -58,66 +71,130 @@ class NoteProcessor(
             topic = null,
             importance = 0f,
             duplicateScore = 0f,
-            processedStatus = "NEW",
+            processedStatus = "QUEUED",
             readStatus = false,
             reviewedCount = 0,
             folderId = folderId
         )
         noteRepository.upsert(note)
-        process(noteId)
+        updateProgress(noteId, note.sourceTitle, 0.05f, "已保存，等待整理")
+        NoteProcessingScheduler.schedule(context, noteId)
+        startProcessing(noteId)
         noteId
     }
 
     suspend fun process(noteId: String) = withContext(Dispatchers.IO) {
-        val note = noteRepository.getNote(noteId) ?: return@withContext
-        val ocrText = recognizeImageText(note)
-        val webText = fetchWebText(note.url)
-        val content = normalizeContent(note.rawText.orEmpty(), ocrText, webText)
-        val vector = blueLM.embed(content)
-        val historical = noteRepository.loadWithEmbeddings(noteId)
-        val ranked = historical.map {
-            val score = VectorCodec.cosine(vector, VectorCodec.decode(it.vectorBlob))
-            RelatedNote(it.note, "similar", score)
-        }.sortedByDescending { it.confidence }
-
-        val maxSimilarity = ranked.firstOrNull()?.confidence ?: 0f
-        val ai = blueLM.enrichNote(content, maxSimilarity)
-        val enriched = note.copy(
-            ocrText = ocrText.ifBlank { null },
-            noteContent = content,
-            summary = ai.summary,
-            tags = JsonText.encodeList(ai.tags),
-            topic = ai.topic,
-            importance = ai.importance,
-            duplicateScore = ai.duplicateScore,
-            processedStatus = "PROCESSED"
-        )
-        noteRepository.upsert(enriched)
-        noteRepository.saveEmbedding(
-            NoteEmbeddingEntity(
-                noteId = noteId,
-                modelName = "mock-bluelm-embedding",
-                vectorDim = vector.size,
-                vectorBlob = VectorCodec.encode(vector),
-                updatedAt = System.currentTimeMillis()
-            )
-        )
-
-        val relations = ranked.take(3).mapNotNull { candidate ->
-            blueLM.classifyRelation(enriched, candidate.note, candidate.confidence)?.let { relation ->
-                NoteRelationEntity(
-                    relationId = "${noteId}_${candidate.note.noteId}_${relation.relationType}",
-                    noteIdFrom = noteId,
-                    noteIdTo = candidate.note.noteId,
-                    relationType = relation.relationType,
-                    confidence = relation.confidence,
-                    evidence = relation.evidence,
-                    createdAt = System.currentTimeMillis()
-                )
-            }
+        if (!activeNoteIds.add(noteId)) return@withContext
+        val note = noteRepository.getNote(noteId)
+        if (note == null) {
+            activeNoteIds.remove(noteId)
+            return@withContext
         }
-        relationRepository.upsertAll(relations)
-        createReviewCard(enriched, relations, ranked)
+        try {
+            updateProgress(noteId, note.sourceTitle, 0.12f, "开始生成摘要和标签")
+            noteRepository.updateProcessedStatus(noteId, "PROCESSING")
+            updateProgress(noteId, note.sourceTitle, 0.22f, "正在读取截图和网页内容")
+            val ocrText = recognizeImageText(note)
+            val webText = fetchWebText(note.url)
+            val content = normalizeContent(note.rawText.orEmpty(), ocrText, webText)
+                .ifBlank { note.sourceTitle }
+            updateProgress(noteId, note.sourceTitle, 0.42f, "正在理解内容")
+            val vector = blueLM.embed(content)
+            val historical = noteRepository.loadWithEmbeddings(noteId)
+                .filter { noteRepository.getNote(it.note.noteId) != null }
+            val ranked = historical.map {
+                val score = VectorCodec.cosine(vector, VectorCodec.decode(it.vectorBlob))
+                RelatedNote(it.note, "similar", score)
+            }.sortedByDescending { it.confidence }
+
+            val maxSimilarity = ranked.firstOrNull()?.confidence ?: 0f
+            updateProgress(noteId, note.sourceTitle, 0.62f, "正在生成摘要和标签")
+            val ai = blueLM.enrichNote(content, maxSimilarity)
+            if (noteRepository.getNote(noteId) == null) {
+                removeProgress(noteId)
+                return@withContext
+            }
+            val enriched = note.copy(
+                ocrText = ocrText.ifBlank { null },
+                noteContent = content,
+                summary = ai.summary,
+                tags = JsonText.encodeList(sanitizeTags(ai.tags, ai.topic)),
+                topic = ai.topic.takeIf { it.isNotBlank() },
+                importance = ai.importance,
+                duplicateScore = ai.duplicateScore,
+                processedStatus = "PROCESSED"
+            )
+            noteRepository.upsert(enriched)
+            if (noteRepository.getNote(noteId) == null) {
+                removeProgress(noteId)
+                return@withContext
+            }
+            updateProgress(noteId, note.sourceTitle, 0.76f, "正在保存知识索引")
+            noteRepository.saveEmbedding(
+                NoteEmbeddingEntity(
+                    noteId = noteId,
+                    modelName = "mock-bluelm-embedding",
+                    vectorDim = vector.size,
+                    vectorBlob = VectorCodec.encode(vector),
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+
+            updateProgress(noteId, note.sourceTitle, 0.86f, "正在查找关联卡片")
+            val relations = ranked.take(3).mapNotNull { candidate ->
+                if (noteRepository.getNote(noteId) == null || noteRepository.getNote(candidate.note.noteId) == null) {
+                    null
+                } else {
+                    blueLM.classifyRelation(enriched, candidate.note, candidate.confidence)?.let { relation ->
+                        NoteRelationEntity(
+                            relationId = "${noteId}_${candidate.note.noteId}_${relation.relationType}",
+                            noteIdFrom = noteId,
+                            noteIdTo = candidate.note.noteId,
+                            relationType = relation.relationType,
+                            confidence = relation.confidence,
+                            evidence = relation.evidence,
+                            createdAt = System.currentTimeMillis()
+                        )
+                    }
+                }
+            }
+            if (noteRepository.getNote(noteId) == null) {
+                removeProgress(noteId)
+                return@withContext
+            }
+            relationRepository.upsertAll(relations)
+            updateProgress(noteId, note.sourceTitle, 0.94f, "正在生成复习卡")
+            createReviewCard(enriched, relations, ranked)
+            updateProgress(noteId, note.sourceTitle, 1f, "整理完成", done = true)
+            backgroundScope.launch {
+                delay(2_500)
+                removeProgress(noteId)
+            }
+        } catch (error: Throwable) {
+            if (noteRepository.getNote(noteId) != null) {
+                noteRepository.updateProcessedStatus(noteId, "FAILED")
+                updateProgress(noteId, note.sourceTitle, 1f, "生成失败，稍后会重试", failed = true)
+            } else {
+                removeProgress(noteId)
+            }
+            throw error
+        } finally {
+            activeNoteIds.remove(noteId)
+        }
+    }
+
+    suspend fun schedulePendingNotes() = withContext(Dispatchers.IO) {
+        noteRepository.loadPendingProcessing().forEach { note ->
+            updateProgress(note.noteId, note.sourceTitle, 0.05f, "等待继续整理")
+            NoteProcessingScheduler.schedule(context, note.noteId)
+            startProcessing(note.noteId)
+        }
+    }
+
+    private fun startProcessing(noteId: String) {
+        backgroundScope.launch {
+            runCatching { process(noteId) }
+        }
     }
 
     private suspend fun createReviewCard(
@@ -125,9 +202,11 @@ class NoteProcessor(
         relations: List<NoteRelationEntity>,
         ranked: List<RelatedNote>
     ) {
+        if (noteRepository.getNote(current.noteId) == null) return
         val related = ranked.take(3).map { it.note }
         val relationHint = relations.firstOrNull()?.relationType ?: "relation"
         val draft = blueLM.generateReviewCard(current, related, relationHint)
+        if (noteRepository.getNote(current.noteId) == null) return
         val now = System.currentTimeMillis()
         reviewCardRepository.upsert(
             ReviewCardEntity(
@@ -217,4 +296,48 @@ class NoteProcessor(
             .replace(Regex("\\s{2,}"), " ")
             .trim()
     }
+
+    private fun sanitizeTags(tags: List<String>, topic: String): List<String> {
+        val cleaned = (tags + topic)
+            .map { it.trim().removePrefix("#") }
+            .map { tag -> tag.replace(Regex("\\s+"), "") }
+            .filter { it.isNotBlank() }
+            .map { tag -> if (tag.length > 10) "${tag.take(10)}…" else tag }
+            .distinct()
+            .take(5)
+        return cleaned.ifEmpty { listOf("待归类") }
+    }
+
+    private fun updateProgress(
+        noteId: String,
+        title: String,
+        progress: Float,
+        message: String,
+        done: Boolean = false,
+        failed: Boolean = false
+    ) {
+        val item = NoteProcessingProgress(
+            noteId = noteId,
+            title = title,
+            progress = progress.coerceIn(0f, 1f),
+            message = message,
+            done = done,
+            failed = failed
+        )
+        _processingProgress.value = (_processingProgress.value.filterNot { it.noteId == noteId } + item)
+            .sortedBy { it.done }
+    }
+
+    private fun removeProgress(noteId: String) {
+        _processingProgress.value = _processingProgress.value.filterNot { it.noteId == noteId }
+    }
 }
+
+data class NoteProcessingProgress(
+    val noteId: String,
+    val title: String,
+    val progress: Float,
+    val message: String,
+    val done: Boolean = false,
+    val failed: Boolean = false
+)

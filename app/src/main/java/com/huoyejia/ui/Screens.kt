@@ -44,6 +44,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -78,6 +79,7 @@ import com.huoyejia.data.local.FolderEntity
 import com.huoyejia.domain.CardAssistantState
 import com.huoyejia.domain.ExplainUiState
 import com.huoyejia.domain.ExplainPack
+import com.huoyejia.domain.NoteProcessingProgress
 import com.huoyejia.domain.ScoredNote
 import com.huoyejia.util.JsonText
 import java.io.File
@@ -111,8 +113,8 @@ fun InboxScreen(
         item {
             HeroCard(
                 title = "活页夹",
-                subtitle = "把收藏变成可复习的知识关系。新增内容会自动摘要、打标签、找旧笔记并生成回流卡。",
-                action = "新增演示网页收藏",
+                subtitle = "把有价值的内容存成卡片，自动整理摘要、标签和复习问题。",
+                action = "添加示例卡片",
                 onAction = onAddDemo
             )
         }
@@ -163,6 +165,7 @@ fun CaptureScreen(
     onOpenFloatingCapture: () -> Unit,
     folders: List<FolderEntity>,
     onCreateFolder: (String) -> Unit,
+    processingProgress: List<NoteProcessingProgress> = emptyList(),
     isBusy: Boolean = false,
     pendingCaptureTitle: String? = null,
     pendingCaptureText: String? = null,
@@ -173,7 +176,7 @@ fun CaptureScreen(
     onSaveComplete: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    var title by remember { mutableStateOf("未命名学习材料") }
+    var title by remember { mutableStateOf("") }
     var text by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
     var screenshotUri by remember { mutableStateOf<String?>(null) }
@@ -192,7 +195,7 @@ fun CaptureScreen(
         val incomingText = pendingCaptureText.orEmpty()
         val incomingUrl = pendingCaptureUrl.orEmpty()
         if (incomingText.isNotBlank() || incomingUrl.isNotBlank()) {
-            title = pendingCaptureTitle?.takeIf { it.isNotBlank() } ?: "浮窗采集"
+            title = pendingCaptureTitle?.takeIf { it.isNotBlank() }.orEmpty()
             text = incomingText
             url = incomingUrl
             showFolderPicker = pendingCaptureShowFolderPicker
@@ -235,7 +238,7 @@ fun CaptureScreen(
             else -> "manual"
         }
         onSaveText(
-            title.ifBlank { "未命名学习材料" },
+            title.ifBlank { "未命名收藏" },
             resolvedText,
             sourceType,
             resolvedUrl.ifBlank { null },
@@ -259,7 +262,7 @@ fun CaptureScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     SectionTitle("快速采集")
-                    TinyText("先整理素材，再选择收藏夹并交给 AI 总结。")
+                    TinyText("粘贴内容、链接或截图，保存后会在后台整理。")
                 }
                 Button(
                     onClick = onOpenFloatingCapture,
@@ -311,14 +314,16 @@ fun CaptureScreen(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f))
             ) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("存入活页夹 + AI总结", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                    Text("保存到活页夹", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Black, fontSize = 20.sp)
                     Text(
-                        "选择收藏夹后保存，系统会继续执行清洗、摘要、标签、关联旧笔记和复习卡生成。",
+                        "选择收藏夹后即可返回使用，摘要、标签和复习卡会继续生成。",
                         color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.84f),
                         lineHeight = 20.sp
                     )
                 }
             }
+
+            ProcessingProgressCard(processingProgress)
         }
 
         if (showFolderPicker) {
@@ -339,13 +344,54 @@ fun CaptureScreen(
                     color = MaterialTheme.colorScheme.inverseSurface
                 ) {
                     Text(
-                        "已保存并生成摘要",
+                        "已保存，正在后台整理",
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
                         color = MaterialTheme.colorScheme.inverseOnSurface,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ProcessingProgressCard(progressItems: List<NoteProcessingProgress>) {
+    if (progressItems.isEmpty()) return
+    val activeItems = progressItems.filterNot { it.done || it.failed }
+    val failedItems = progressItems.filter { it.failed }
+    val displayItems = if (activeItems.isNotEmpty()) activeItems else progressItems
+    val averageProgress = displayItems.map { it.progress }.average().takeIf { !it.isNaN() }?.toFloat() ?: 0f
+    val primary = displayItems.maxByOrNull { it.progress } ?: return
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
+    ) {
+        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "AI 正在整理",
+                    modifier = Modifier.weight(1f),
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text("${(averageProgress * 100).toInt()}%", fontWeight = FontWeight.Bold)
+            }
+            LinearProgressIndicator(
+                progress = { averageProgress.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                "${primary.title}：${primary.message}",
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 20.sp
+            )
+            val activeText = if (activeItems.size > 1) "还有 ${activeItems.size} 个任务在生成。" else "离开采集页也会继续生成。"
+            val failedText = if (failedItems.isNotEmpty()) " ${failedItems.size} 个任务暂未完成，稍后会重试。" else ""
+            TinyText(activeText + failedText)
         }
     }
 }
@@ -491,33 +537,6 @@ private fun FolderRow(
     }
 }
 
-private fun buildCapturePayload(
-    folder: String,
-    title: String,
-    text: String,
-    url: String,
-    imagePath: String?
-): String {
-    return buildString {
-        appendLine("收藏夹：$folder")
-        appendLine("标题：${title.ifBlank { "未命名学习材料" }}")
-        if (text.isNotBlank()) {
-            appendLine()
-            appendLine("学习内容：")
-            appendLine(text.trim())
-        }
-        if (url.isNotBlank()) {
-            appendLine()
-            appendLine("学习网址：$url")
-            appendLine("请结合网址内容生成核心摘要、结构化要点和可复习问题。")
-        }
-        if (!imagePath.isNullOrBlank()) {
-            appendLine()
-            appendLine("截图：已添加本地图片 $imagePath，请在总结时结合截图线索。")
-        }
-    }
-}
-
 private fun copyImageToCaptureStorage(context: android.content.Context, uri: Uri): String? {
     return runCatching {
         val dir = File(context.filesDir, "capture_images").apply { mkdirs() }
@@ -528,40 +547,6 @@ private fun copyImageToCaptureStorage(context: android.content.Context, uri: Uri
         file.absolutePath
     }.getOrNull()
 }
-
-/**
- * 搜索页面 - 已禁用
- * 
- * 此搜索功能已被暂时禁用。如果您需要重新启用此功能，
- * 请取消注释以下代码并确保相关的导航路由也已启用。
- * 
- * @Composable
- * fun SearchScreen(
- *     results: List<ScoredNote>,
- *     onSearch: (String) -> Unit,
- *     onOpenNote: (String) -> Unit
- * ) {
- *     var query by remember { mutableStateOf("帮我找关于二战原因的所有内容") }
- *     Column(
- *         modifier = Modifier
- *             .fillMaxSize()
- *             .padding(horizontal = 18.dp, vertical = 24.dp),
- *         verticalArrangement = Arrangement.spacedBy(12.dp)
- *     ) {
- *         SectionTitle("自然语言检索")
- *         OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("输入问题") }, modifier = Modifier.fillMaxWidth())
- *         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
- *             Button(onClick = { onSearch(query) }) { Text("检索") }
- *             OutlinedButton(onClick = { onSearch("找上次那张地图截图") }) { Text("找地图截图") }
- *         }
- *         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
- *             items(results, key = { it.note.noteId }) { result ->
- *                 ResultCard(result = result, onClick = { onOpenNote(result.note.noteId) })
- *             }
- *         }
- *     }
- * }
- */
 
 @Composable
 fun ReviewScreen(
@@ -706,7 +691,7 @@ fun DashboardScreen(
         }
         AssistCard("行为建议", "不要继续扩大收藏池。优先打开回流卡，完成 1 张后再新增材料，强化“从收藏到理解”的行为闭环。")
         AssistCard("重复收藏率", "${((stats?.duplicateRate ?: 0f) * 100).toInt()}% 高相似收藏会抬高囤积指数。")
-        AssistCard("未复习卡片", "${cards.count { it.status == "TODO" }} 张 TODO，完成后会写回笔记状态。")
+        AssistCard("待复习卡片", "${cards.count { it.status == "TODO" }} 张待完成，复习后会自动更新状态。")
     }
 }
 
@@ -736,18 +721,18 @@ fun ExplainScreen(
             .padding(horizontal = 18.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        SectionTitle("AI讲解工坊")
+        SectionTitle("AI 讲解")
         AssistCard(
-            "模型状态",
+            "生成状态",
             if (explainState.remoteReady) {
-                "当前已接入真实模型：${explainState.providerLabel}。可生成知识讲解、带图 PPT 和动画分镜。"
+                "已准备好生成讲解、PPT 和动画分镜。"
             } else {
-                "当前未配置真实模型，正在使用 ${explainState.providerLabel}。在 local.properties 中配置 LLM_BASE_URL、LLM_API_KEY、LLM_CHAT_MODEL、LLM_EMBEDDING_MODEL 后会自动切换。"
+                "当前可先预览基础讲解，接入在线模型后效果会更完整。"
             }
         )
         AssistCard(
-            "比赛用途",
-            "这个板块不是做普通摘要，而是把一条知识点转成“能讲给别人听”的解释结构，同时输出带图 PPT 和可做视频的小动画分镜。"
+            "能做什么",
+            "把一张卡片整理成更容易讲清楚的结构，并生成 PPT 大纲和动画分镜。"
         )
         SectionTitle("选择要讲解的笔记")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1035,7 +1020,8 @@ fun NoteDetailScreen(
     onStartReview: () -> Unit,
     onGeneratePpt: (String) -> Unit,
     onGenerateVideo: (String) -> Unit,
-    onAskQuestion: (String, String) -> Unit
+    onAskQuestion: (String, String) -> Unit,
+    onUpdateTitle: (String, String) -> Unit
 ) {
     if (note == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -1054,6 +1040,8 @@ fun NoteDetailScreen(
     val tags = JsonText.decodeList(note.tags).take(3)
     var selectedTag by remember(note.noteId) { mutableStateOf<String?>(null) }
     var assistantInput by remember(note.noteId) { mutableStateOf("") }
+    var showEditTitleDialog by remember(note.noteId) { mutableStateOf(false) }
+    var editingTitle by remember(note.noteId) { mutableStateOf(note.sourceTitle) }
     val sameTagNotes = selectedTag?.let { tag ->
         notes.filter { candidate -> JsonText.decodeList(candidate.tags).contains(tag) }
     }.orEmpty()
@@ -1070,7 +1058,21 @@ fun NoteDetailScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         OutlinedButton(onClick = onBack) { Text("返回") }
-        SectionTitle(note.sourceTitle)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                note.sourceTitle,
+                modifier = Modifier.weight(1f),
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Black,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            OutlinedButton(onClick = {
+                editingTitle = note.sourceTitle
+                showEditTitleDialog = true
+            }) { Text("改标题") }
+        }
         SourceMaterialCard(note)
         if (note.duplicateScore >= 0.45f || duplicateCount > 0) {
             DuplicateWarningCard(
@@ -1081,7 +1083,7 @@ fun NoteDetailScreen(
                 onStartReview = onStartReview
             )
         }
-        AssistCard("AI 摘要", note.summary.orEmpty(), markdown = true)
+        AiSummaryCard(note.summary.orEmpty())
         ClickableTagSection(
             tags = tags,
             selectedTag = selectedTag,
@@ -1133,6 +1135,33 @@ fun NoteDetailScreen(
                 }
             }
         }
+    }
+    if (showEditTitleDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditTitleDialog = false },
+            title = { Text("修改标题") },
+            text = {
+                OutlinedTextField(
+                    value = editingTitle,
+                    onValueChange = { editingTitle = it },
+                    label = { Text("卡片标题") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onUpdateTitle(note.noteId, editingTitle)
+                        showEditTitleDialog = false
+                    },
+                    enabled = editingTitle.isNotBlank()
+                ) { Text("保存") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditTitleDialog = false }) { Text("取消") }
+            }
+        )
     }
 }
 
@@ -1282,7 +1311,7 @@ private fun ExplainActionsCard(
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("讲解", fontSize = 22.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
-            Text("接入 AI 后可基于本卡片生成讲解结构、PPT 和视频；视频接口未配置时会提示缺少 API key。", lineHeight = 20.sp)
+            Text("可基于本卡片生成讲解结构、PPT 和视频；如果视频服务暂不可用，会保留讲解与 PPT。", lineHeight = 20.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Button(
                     onClick = onGeneratePpt,
@@ -1366,7 +1395,7 @@ private fun AiAssistantCard(
                 enabled = input.isNotBlank() && !isAsking
             ) { Text(if (isAsking) "AI 正在思考..." else "提问") }
             if (isAsking) {
-                TinyText("正在把当前卡片、原文、AI 摘要、标签和关联卡片发送给 AI...")
+                TinyText("仅根据当前卡片内容回答，避免混入其他卡片。")
             }
             errorMessage?.let {
                 Surface(
@@ -1427,7 +1456,7 @@ private fun suggestedQuestions(
     return listOfNotNull(
         reviewCard?.question,
         "$topic 的核心结论是什么？",
-        "这条内容和已有收藏有什么关系？".takeIf { relatedNotes.isNotEmpty() },
+        "这张卡片最适合怎么复习？",
         "我应该怎么复述这张卡片？"
     ).distinct().take(4)
 }
@@ -1514,9 +1543,9 @@ private fun NoteCard(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                TinyText("topic: ${note.topic ?: "-"}")
-                TinyText("relation: $relationCount")
-                TinyText("dup: ${(note.duplicateScore * 100).toInt()}%")
+                TinyText("主题：${note.topic ?: "待整理"}")
+                TinyText("关联：$relationCount")
+                TinyText("相似度：${(note.duplicateScore * 100).toInt()}%")
             }
         }
     }
@@ -1576,6 +1605,40 @@ private fun RelationCard(relation: NoteRelationEntity, note: NoteEntity, onClick
 }
 
 @Composable
+private fun AiSummaryCard(summary: String) {
+    var expanded by remember(summary) { mutableStateOf(false) }
+    var hasOverflow by remember(summary) { mutableStateOf(false) }
+    val body = summary.ifBlank { "暂无内容" }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("AI 摘要", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            MarkdownText(
+                text = body,
+                maxLines = if (expanded) Int.MAX_VALUE else 3,
+                overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
+                onTextLayout = { result ->
+                    if (!expanded && result.hasVisualOverflow) {
+                        hasOverflow = true
+                    }
+                }
+            )
+            if (hasOverflow || expanded) {
+                TextButton(
+                    onClick = { expanded = !expanded },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text(if (expanded) "收起" else "全文")
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun AssistCard(title: String, body: String, markdown: Boolean = false) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1594,8 +1657,21 @@ private fun AssistCard(title: String, body: String, markdown: Boolean = false) {
 }
 
 @Composable
-private fun MarkdownText(text: String, modifier: Modifier = Modifier) {
-    Text(parseSimpleMarkdown(text), modifier = modifier, lineHeight = 20.sp)
+private fun MarkdownText(
+    text: String,
+    modifier: Modifier = Modifier,
+    maxLines: Int = Int.MAX_VALUE,
+    overflow: TextOverflow = TextOverflow.Clip,
+    onTextLayout: (androidx.compose.ui.text.TextLayoutResult) -> Unit = {}
+) {
+    Text(
+        parseSimpleMarkdown(text),
+        modifier = modifier,
+        lineHeight = 20.sp,
+        maxLines = maxLines,
+        overflow = overflow,
+        onTextLayout = onTextLayout
+    )
 }
 
 private fun parseSimpleMarkdown(text: String) = buildAnnotatedString {
@@ -1631,7 +1707,7 @@ private fun MetricPill(label: String, value: String) {
 @Composable
 private fun TagRow(tags: List<String>) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        tags.take(3).forEach { tag -> StatusChip(tag) }
+        tags.take(3).forEach { tag -> StatusChip(displayTag(tag)) }
     }
 }
 
@@ -1642,8 +1718,19 @@ private fun StatusChip(text: String) {
         color = MaterialTheme.colorScheme.tertiaryContainer,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f))
     ) {
-        Text(text, modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp), fontSize = 12.sp)
+        Text(
+            text,
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
+}
+
+private fun displayTag(tag: String): String {
+    val clean = tag.trim().replace(Regex("\\s+"), "")
+    return if (clean.length > 10) "${clean.take(10)}…" else clean
 }
 
 @Composable

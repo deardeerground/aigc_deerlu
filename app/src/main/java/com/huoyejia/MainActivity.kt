@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity() {
                 val cardAssistantState by viewModel.cardAssistantState.collectAsState()
                 val isBusy by viewModel.isBusy.collectAsState()
                 val folders by viewModel.folders.collectAsState()
+                val processingProgress by viewModel.processingProgress.collectAsState()
                 val pending = pendingCapture
                 val shouldOpenCapture = pending != null || openCaptureRequested
 
@@ -91,6 +92,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenFloatingCapture = ::openFloatingCapture,
                                 folders = folders,
                                 onCreateFolder = viewModel::createFolder,
+                                processingProgress = processingProgress,
                                 isBusy = isBusy,
                                 pendingCaptureTitle = pending?.title,
                                 pendingCaptureText = pending?.text,
@@ -147,7 +149,8 @@ class MainActivity : ComponentActivity() {
                                 onStartReview = { navController.navigate("review") },
                                 onGeneratePpt = viewModel::generateCardPpt,
                                 onGenerateVideo = viewModel::generateCardVideo,
-                                onAskQuestion = viewModel::askCardQuestion
+                                onAskQuestion = viewModel::askCardQuestion,
+                                onUpdateTitle = viewModel::updateNoteTitle
                             )
                         }
                     }

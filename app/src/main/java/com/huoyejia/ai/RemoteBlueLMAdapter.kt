@@ -218,7 +218,8 @@ class RemoteBlueLMAdapter(
                                     "content",
                                     """
                                     你是学习卡片 AI 小助手。
-                                    只能基于给定的当前卡片、原文、AI摘要、标签、网址和关联卡片回答。
+                                    只能基于给定的当前卡片、原文、AI摘要、标签和网址回答。
+                                    不要引用其他卡片或外部知识库内容，除非用户明确贴出对应内容。
                                     回答要清楚、简洁、适合学生理解；优先给结构化要点和可执行复习建议。
                                     如果材料不足，不要编造，请说明还需要什么信息。
                                     """.trimIndent()
@@ -237,9 +238,6 @@ class RemoteBlueLMAdapter(
                                     AI摘要：${current.summary.orEmpty()}
                                     标签JSON：${current.tags}
                                     主题：${current.topic.orEmpty()}
-
-                                    关联卡片：
-                                    ${related.joinToString("\n\n") { "- ${it.sourceTitle}\n摘要：${it.summary.orEmpty()}\n内容：${it.noteContent.take(600)}" }}
 
                                     用户问题：
                                     $question

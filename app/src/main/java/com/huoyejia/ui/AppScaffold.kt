@@ -83,7 +83,7 @@ fun HuoyejiaScaffold(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        "正在存储并生成AI摘要",
+                        "正在保存，AI 整理会在后台继续",
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(MaterialTheme.colorScheme.primary)

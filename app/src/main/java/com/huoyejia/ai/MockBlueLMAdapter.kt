@@ -111,16 +111,12 @@ class MockBlueLMAdapter : BlueLMAdapter {
         question: String
     ): String {
         val summary = current.summary ?: current.noteContent.take(120).ifBlank { "这张卡片还没有足够内容。" }
-        val relatedText = related.take(2)
-            .joinToString("、") { it.sourceTitle }
-            .ifBlank { "暂无强关联卡片" }
         return """
-            这是本地占位回答：$summary
+            根据当前卡片可先这样理解：$summary
 
             你的问题是：$question
-            关联参考：$relatedText。
 
-            在 local.properties 配置 LLM_CHAT_BASE_URL、LLM_CHAT_API_KEY、LLM_CHAT_MODEL 后，这里会自动切换为真实 AI 回答。
+            当前为本地回答模式；配置真实模型后会给出更完整的回答。
         """.trimIndent()
     }
 

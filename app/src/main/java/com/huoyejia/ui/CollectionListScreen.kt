@@ -434,7 +434,7 @@ fun CollectionListScreen(
                 },
                 text = {
                     Text(
-                        text = "确定要删除收藏夹\"${folderToDelete?.name}\"吗？\n\n删除后无法恢复，该收藏夹内的所有卡片也将被删除。",
+                        text = "确定要删除收藏夹\"${folderToDelete?.name}\"吗？\n\n收藏夹会被删除，里面的卡片会保留在未分类中。",
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 },

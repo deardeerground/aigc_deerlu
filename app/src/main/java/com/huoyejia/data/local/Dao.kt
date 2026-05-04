@@ -47,8 +47,17 @@ interface NoteDao {
     @Query("UPDATE notes SET reviewed_count = reviewed_count + 1, read_status = 1 WHERE note_id = :noteId")
     suspend fun markReviewed(noteId: String)
 
+    @Query("UPDATE notes SET source_title = :title WHERE note_id = :noteId")
+    suspend fun updateTitle(noteId: String, title: String)
+
+    @Query("UPDATE notes SET processed_status = :status WHERE note_id = :noteId")
+    suspend fun updateProcessedStatus(noteId: String, status: String)
+
     @Query("DELETE FROM notes WHERE note_id = :noteId")
     suspend fun deleteNote(noteId: String)
+
+    @Query("SELECT * FROM notes WHERE processed_status IN (:statuses) ORDER BY created_at ASC")
+    suspend fun loadByProcessedStatuses(statuses: List<String>): List<NoteEntity>
 
     @Query(
         """

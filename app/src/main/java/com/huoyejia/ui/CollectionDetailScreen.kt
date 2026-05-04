@@ -2,6 +2,7 @@ package com.huoyejia.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -9,12 +10,14 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -55,16 +58,14 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.huoyejia.data.local.FolderEntity
 import com.huoyejia.data.local.NoteEntity
+import com.huoyejia.util.JsonText
 
 /**
  * 标签解码函数
  */
 fun decodeTags(tagsJson: String): List<String> {
-    return tagsJson.trim()
-        .removePrefix("[")
-        .removeSuffix("]")
-        .split(",")
-        .map { it.trim().removeSurrounding("\"") }
+    return JsonText.decodeList(tagsJson)
+        .map { displayTag(it) }
         .filter { it.isNotBlank() }
 }
 
@@ -75,7 +76,7 @@ fun decodeTags(tagsJson: String): List<String> {
  * 2. 标题下方辅助文字（卡片数量统计）
  * 3. 主体内容区（卡片列表，每个卡片含3个圆形图标+回流次数统计）
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CollectionDetailScreen(
     navController: NavController,
@@ -253,7 +254,7 @@ internal fun CollectionCardItem(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(100.dp)
+            .heightIn(min = 100.dp)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onDelete
@@ -323,20 +324,13 @@ internal fun CollectionCardItem(
  * 标签行组件
  */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun TagRow(tags: List<String>) {
-    Column(
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        tags.chunked(3).forEach { rowTags ->
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                rowTags.forEach { tag ->
-                    StatusChip(text = tag)
-                }
-            }
-        }
+        tags.take(3).forEach { tag -> StatusChip(text = displayTag(tag)) }
     }
 }
 
@@ -354,7 +348,14 @@ private fun StatusChip(text: String) {
             text = text,
             modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
             fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             color = MaterialTheme.colorScheme.onTertiaryContainer
         )
     }
+}
+
+private fun displayTag(tag: String): String {
+    val clean = tag.trim().replace(Regex("\\s+"), "")
+    return if (clean.length > 10) "${clean.take(10)}…" else clean
 }

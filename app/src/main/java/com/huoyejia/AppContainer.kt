@@ -19,9 +19,13 @@ import com.huoyejia.domain.PptExportService
 import com.huoyejia.domain.SearchService
 import com.huoyejia.domain.AnimationExportService
 import com.huoyejia.domain.VideoGenerationService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 class AppContainer(context: Context) {
     private val db = HuoyejiaDatabase.create(context)
+    private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mockBlueLM = MockBlueLMAdapter()
     val blueLM: BlueLMAdapter = RemoteBlueLMAdapter(LlmRuntimeConfig.fromBuildConfig(), mockBlueLM)
 
@@ -30,7 +34,8 @@ class AppContainer(context: Context) {
     val relationRepository = RelationRepository(db.relationDao())
     val reviewCardRepository = ReviewCardRepository(db.reviewCardDao())
     val statsRepository = StatsRepository(db.statsDao())
-    val processor = NoteProcessor(context, noteRepository, relationRepository, reviewCardRepository, blueLM, folderRepository)
+    val processor = NoteProcessor(context, noteRepository, relationRepository, reviewCardRepository, blueLM, folderRepository, backgroundScope)
+    val processingProgress = processor.processingProgress
     val searchService = SearchService(noteRepository, blueLM)
     val explainService = ExplainService(noteRepository, relationRepository, blueLM)
     val pptExportService = PptExportService(context.applicationContext, blueLM)
