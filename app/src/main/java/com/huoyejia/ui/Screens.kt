@@ -21,8 +21,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -55,6 +58,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -1239,6 +1243,9 @@ private fun ImageSection(imagePath: String) {
     var showPreview by remember { mutableStateOf(false) }
     var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var showFullScreen by remember { mutableStateOf(false) }
+    var scale by remember { mutableStateOf(1f) }
+    var offsetX by remember { mutableStateOf(0f) }
+    var offsetY by remember { mutableStateOf(0f) }
     val context = LocalContext.current
 
     LaunchedEffect(showPreview, imagePath) {
@@ -1252,19 +1259,32 @@ private fun ImageSection(imagePath: String) {
 
     if (showFullScreen && bitmap != null) {
         Dialog(
-            onDismissRequest = { showFullScreen = false }
+            onDismissRequest = { showFullScreen = false; scale = 1f; offsetX = 0f; offsetY = 0f }
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black)
-                    .clickable { showFullScreen = false },
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            scale = (scale * zoom).coerceIn(0.5f, 4f)
+                            offsetX += pan.x
+                            offsetY += pan.y
+                        }
+                    },
                 contentAlignment = Alignment.Center
             ) {
                 Image(
                     bitmap = bitmap!!.asImageBitmap(),
                     contentDescription = "截图大图",
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            translationX = offsetX,
+                            translationY = offsetY
+                        )
                 )
             }
         }
