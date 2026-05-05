@@ -1,6 +1,7 @@
 package com.huoyejia
 
 import android.app.Application
+import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.huoyejia.NoteProcessingScheduler
@@ -492,7 +493,9 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
     }
     
     fun testNotification() {
-        DailyReviewAlarm.testNotification(getApplication())
+        viewModelScope.launch {
+            DailyReviewAlarm.testNotification(getApplication())
+        }
     }
     
     fun disableNotifications() {
@@ -502,4 +505,15 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
     fun areNotificationsEnabled(): Boolean {
         return notificationScheduler.areNotificationsEnabled()
     }
+    
+    fun requestExactAlarmPermission(): Intent {
+        return notificationScheduler.requestExactAlarmPermission()
+    }
+    
+    fun refreshNotificationState() {
+        notificationScheduler.refreshState()
+    }
+    
+    val notificationsEnabled: StateFlow<Boolean> = notificationScheduler.isEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 }
