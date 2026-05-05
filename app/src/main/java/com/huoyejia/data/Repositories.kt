@@ -45,6 +45,14 @@ class NoteRepository(
 
     suspend fun markReviewed(noteId: String) = noteDao.markReviewed(noteId)
 
+    suspend fun updateTitle(noteId: String, title: String) = noteDao.updateTitle(noteId, title)
+
+    suspend fun updateProcessedStatus(noteId: String, status: String) = noteDao.updateProcessedStatus(noteId, status)
+
+    suspend fun loadPendingProcessing(): List<NoteEntity> {
+        return noteDao.loadByProcessedStatuses(listOf("NEW", "QUEUED", "PROCESSING", "FAILED"))
+    }
+
     suspend fun saveEmbedding(embedding: NoteEmbeddingEntity) = embeddingDao.upsert(embedding)
 
     suspend fun deleteNote(noteId: String) {

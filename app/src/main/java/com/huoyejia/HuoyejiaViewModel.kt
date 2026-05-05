@@ -3,6 +3,7 @@ package com.huoyejia
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.huoyejia.NoteProcessingScheduler
 import com.huoyejia.data.local.FolderEntity
 import com.huoyejia.data.local.NoteEntity
 import com.huoyejia.data.local.NoteRelationEntity
@@ -11,6 +12,7 @@ import com.huoyejia.data.local.UserStatsEntity
 import com.huoyejia.domain.CardAssistantState
  import com.huoyejia.domain.ExplainUiState
  import com.huoyejia.domain.ExplainPack
+import com.huoyejia.domain.NoteProcessingProgress
  import com.huoyejia.domain.ScoredNote
 import com.huoyejia.domain.StatsCalculator
 import java.io.File
@@ -39,6 +41,8 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
     val folders: StateFlow<List<FolderEntity>> = container.folderRepository.observeFolders()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val processingProgress: StateFlow<List<NoteProcessingProgress>> = container.processingProgress
+
     private val _searchResults = MutableStateFlow<List<ScoredNote>>(emptyList())
     val searchResults: StateFlow<List<ScoredNote>> = _searchResults.asStateFlow()
 
@@ -60,6 +64,7 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             _isBusy.value = true
             container.seedData.ensureSeeded()
+            container.processor.schedulePendingNotes()
             refreshStats()
             if (_explainState.value.selectedNoteId == null) {
                 val first = container.noteRepository.loadAllNotes().firstOrNull()
@@ -73,16 +78,19 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
         if (text.isBlank()) return
         viewModelScope.launch {
             _isBusy.value = true
-            container.processor.captureAndProcess(
-                rawText = text,
-                imagePath = null,
-                sourceType = sourceType,
-                sourceTitle = title.ifBlank { "手动粘贴" },
-                url = null,
-                folderId = folderId
-            )
-            refreshStats()
-            _isBusy.value = false
+            try {
+                container.processor.captureAndProcess(
+                    rawText = text,
+                    imagePath = null,
+                    sourceType = sourceType,
+                    sourceTitle = title.ifBlank { "未命名收藏" },
+                    url = null,
+                    folderId = folderId
+                )
+                refreshStats()
+            } finally {
+                _isBusy.value = false
+            }
         }
     }
 
@@ -100,6 +108,8 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
 
     fun deleteFolder(folderId: String) {
         viewModelScope.launch {
+            container.folderRepository.deleteFolder(folderId)
+            // Keep the cards, but move them out of the deleted folder.
             val notesInFolder = notes.value.filter { it.folderId == folderId }
             notesInFolder.forEach { note ->
                 container.relationRepository.deleteForNote(note.noteId)
@@ -121,16 +131,19 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
         if (text.isBlank() && url.isNullOrBlank() && imagePath.isNullOrBlank()) return
         viewModelScope.launch {
             _isBusy.value = true
-            container.processor.captureAndProcess(
-                rawText = text,
-                imagePath = imagePath,
-                sourceType = sourceType,
-                sourceTitle = title.ifBlank { "手动粘贴" },
-                url = url,
-                folderId = folderId
-            )
-            refreshStats()
-            _isBusy.value = false
+            try {
+                container.processor.captureAndProcess(
+                    rawText = text,
+                    imagePath = imagePath,
+                    sourceType = sourceType,
+                    sourceTitle = title.ifBlank { "未命名收藏" },
+                    url = url,
+                    folderId = folderId
+                )
+                refreshStats()
+            } finally {
+                _isBusy.value = false
+            }
         }
     }
 
@@ -307,6 +320,14 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun updateNoteTitle(noteId: String, title: String) {
+        val cleanTitle = title.trim()
+        if (noteId.isBlank() || cleanTitle.isBlank()) return
+        viewModelScope.launch {
+            container.noteRepository.updateTitle(noteId, cleanTitle)
+        }
+    }
+
     fun generateCardPpt(noteId: String) {
         viewModelScope.launch {
             val pack = ensureExplainPack(noteId) ?: return@launch
@@ -385,7 +406,7 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
                 .take(5)
 
             val answer = runCatching {
-                container.blueLM.answerCardQuestion(current, related, cleanQuestion)
+                container.blueLM.answerCardQuestion(current, emptyList(), cleanQuestion)
             }
             _cardAssistantState.value = if (answer.isSuccess) {
                 CardAssistantState(
