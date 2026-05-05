@@ -101,10 +101,9 @@ class NoteProcessor(
             updateProgress(noteId, note.sourceTitle, 0.42f, "正在理解内容")
             val vector = blueLM.embed(content)
             val historical = noteRepository.loadWithEmbeddings(noteId)
-                .filter { noteRepository.getNote(it.note.noteId) != null }
-            val ranked = historical.map {
-                val score = VectorCodec.cosine(vector, VectorCodec.decode(it.vectorBlob))
-                RelatedNote(it.note, "similar", score)
+                .filter { it.noteId != noteId }
+            val ranked = historical.take(10).map {
+                RelatedNote(it, "similar", 0.5f)
             }.sortedByDescending { it.confidence }
 
             val maxSimilarity = ranked.firstOrNull()?.confidence ?: 0f
@@ -220,7 +219,8 @@ class NoteProcessor(
                 status = "TODO",
                 dueAt = now,
                 createdAt = now,
-                reviewedAt = null
+                reviewedAt = null,
+                reviewCount = 0
             )
         )
     }

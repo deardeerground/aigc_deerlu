@@ -16,6 +16,7 @@ import com.huoyejia.data.local.HuoyejiaDatabase
 import com.huoyejia.domain.ExplainService
 import com.huoyejia.domain.NoteProcessor
 import com.huoyejia.domain.PptExportService
+import com.huoyejia.domain.ReviewCardGenerator
 import com.huoyejia.domain.SearchService
 import com.huoyejia.domain.AnimationExportService
 import com.huoyejia.domain.VideoGenerationService
@@ -41,5 +42,6 @@ class AppContainer(context: Context) {
     val pptExportService = PptExportService(context.applicationContext, blueLM)
     val animationExportService = AnimationExportService(context.applicationContext, blueLM)
     val videoGenerationService = VideoGenerationService(context.applicationContext, LlmRuntimeConfig.fromBuildConfig().video)
+    val reviewCardGenerator = ReviewCardGenerator(noteRepository, reviewCardRepository, relationRepository, blueLM)
     val seedData = SeedData(noteRepository, processor, folderRepository)
 }

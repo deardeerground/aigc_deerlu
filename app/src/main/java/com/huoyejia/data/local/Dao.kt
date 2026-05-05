@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
+import com.huoyejia.data.local.UserStatsEntity
 
 @Dao
 interface FolderDao {
@@ -61,12 +62,23 @@ interface NoteDao {
 
     @Query(
         """
-        SELECT notes.*, note_embeddings.vector_blob AS vector_blob
-        FROM notes INNER JOIN note_embeddings ON notes.note_id = note_embeddings.note_id
+        SELECT notes.* FROM notes INNER JOIN note_embeddings ON notes.note_id = note_embeddings.note_id
         WHERE notes.note_id != :excludeNoteId
         """
     )
-    suspend fun loadWithEmbeddings(excludeNoteId: String): List<NoteWithEmbedding>
+    suspend fun loadWithEmbeddings(excludeNoteId: String): List<NoteEntity>
+
+    @Query("SELECT * FROM notes WHERE folder_id = :folderId ORDER BY created_at DESC")
+    fun observeNotesByFolder(folderId: String): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE processed_status != 'PROCESSED' ORDER BY created_at ASC")
+    suspend fun loadPendingProcessing(): List<NoteEntity>
+
+    @Query("UPDATE notes SET read_status = 1 WHERE note_id = :noteId")
+    suspend fun markAsRead(noteId: String)
+
+    @Query("DELETE FROM notes WHERE folder_id = :folderId")
+    suspend fun deleteAllInFolder(folderId: String)
 }
 
 @Dao
@@ -90,7 +102,7 @@ interface RelationDao {
         ORDER BY confidence DESC
         """
     )
-    suspend fun getForNote(noteId: String): List<NoteRelationEntity>
+    suspend fun findForNote(noteId: String): List<NoteRelationEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(relations: List<NoteRelationEntity>)
@@ -107,11 +119,20 @@ interface ReviewCardDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(card: ReviewCardEntity)
 
-    @Query("UPDATE review_cards SET status = 'DONE', reviewed_at = :reviewedAt WHERE card_id = :cardId")
+    @Query("UPDATE review_cards SET status = 'DONE', reviewed_at = :reviewedAt, review_count = review_count + 1 WHERE card_id = :cardId")
     suspend fun markDone(cardId: String, reviewedAt: Long)
+
+    @Query("UPDATE review_cards SET review_count = review_count + 1 WHERE card_id = :cardId")
+    suspend fun incrementReviewCount(cardId: String)
 
     @Query("DELETE FROM review_cards WHERE note_id = :noteId")
     suspend fun deleteForNote(noteId: String)
+
+    @Query("SELECT * FROM review_cards WHERE status = 'TODO' ORDER BY review_count ASC, created_at ASC LIMIT :limit")
+    suspend fun getLeastReviewedCards(limit: Int): List<ReviewCardEntity>
+
+    @Query("SELECT COUNT(*) FROM review_cards WHERE status = 'TODO'")
+    suspend fun getPendingCardCount(): Int
 }
 
 @Dao

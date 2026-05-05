@@ -176,6 +176,7 @@ fun CaptureScreen(
     onOpenFloatingCapture: () -> Unit,
     folders: List<FolderEntity>,
     onCreateFolder: (String) -> Unit,
+    notes: List<NoteEntity> = emptyList(),
     processingProgress: List<NoteProcessingProgress> = emptyList(),
     isBusy: Boolean = false,
     pendingCaptureTitle: String? = null,
@@ -224,8 +225,14 @@ fun CaptureScreen(
             showSavedNotice = true
             saveRequested = false
             saveSawBusy = false
-            delay(1500)
+            delay(1000)
             showSavedNotice = false
+        }
+        if (saveRequested && isBusy) {
+            delay(3000)
+            showSavedNotice = false
+            saveRequested = false
+            saveSawBusy = false
         }
     }
     LaunchedEffect(saveRequested) {
@@ -234,9 +241,14 @@ fun CaptureScreen(
             if (saveRequested && !isBusy && !saveSawBusy) {
                 showSavedNotice = true
                 saveRequested = false
-                delay(1500)
+                delay(1000)
                 showSavedNotice = false
             }
+        }
+        if (saveRequested && !saveSawBusy) {
+            delay(3000)
+            showSavedNotice = false
+            saveRequested = false
         }
     }
 
@@ -563,7 +575,8 @@ private fun copyImageToCaptureStorage(context: android.content.Context, uri: Uri
 fun ReviewScreen(
     notes: List<NoteEntity>,
     cards: List<ReviewCardEntity>,
-    onDone: (ReviewCardEntity) -> Unit
+    onDone: (ReviewCardEntity) -> Unit,
+    onGenerateMore: () -> Unit = {}
 ) {
     val todo = cards.filter { it.status == "TODO" }
     LazyColumn(
@@ -575,9 +588,26 @@ fun ReviewScreen(
     ) {
         item {
             SectionTitle("认知回流卡片")
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("待复习: ${todo.size} 张", style = MaterialTheme.typography.bodyMedium)
+                Button(
+                    onClick = onGenerateMore,
+                    enabled = notes.isNotEmpty()
+                ) {
+                    Text("生成更多卡片")
+                }
+            }
         }
         if (todo.isEmpty()) {
-            item { AssistCard("今日完成", "暂无待复习卡片。新增一条收藏后，系统会自动生成联系、对比或因果类问题。") }
+            item { 
+                AssistCard("今日完成", "暂无待复习卡片。新增一条收藏后，系统会自动生成联系、对比或因果类问题。") 
+            }
         }
         items(todo, key = { it.cardId }) { card ->
             val note = notes.firstOrNull { it.noteId == card.noteId }
@@ -1576,13 +1606,19 @@ private fun suggestedQuestions(
     relatedNotes: List<NoteEntity>,
     reviewCard: ReviewCardEntity?
 ): List<String> {
-    val topic = note.topic?.takeIf { it.isNotBlank() } ?: "这个知识点"
+    val noteId = note.noteId
     return listOfNotNull(
-        reviewCard?.question,
-        "$topic 的核心结论是什么？",
-        "这张卡片最适合怎么复习？",
-        "我应该怎么复述这张卡片？"
-    ).distinct().take(4)
+        reviewCard?.question?.takeIf { it.isNotBlank() }?.take(50),
+        note.summary?.let { summary ->
+            if (summary.length > 10) "总结：${summary.take(25)}" else null
+        },
+        note.sourceTitle?.let { title ->
+            if (title.isNotBlank()) "「${title.take(15)}」的三点？" else null
+        },
+        if (note.tags.isNotBlank()) "这些知识点有何联系？" else null
+    ).distinct().take(4).ifEmpty {
+        listOf("重点是什么？", "如何记住？")
+    }
 }
 
 private fun cleanOriginalText(text: String): String {

@@ -9,6 +9,8 @@ import com.huoyejia.data.local.NoteEntity
 import com.huoyejia.data.local.NoteRelationEntity
 import com.huoyejia.data.local.ReviewCardEntity
 import com.huoyejia.data.local.UserStatsEntity
+import com.huoyejia.service.NotificationScheduler
+import com.huoyejia.service.DailyReviewAlarm
 import com.huoyejia.domain.CardAssistantState
  import com.huoyejia.domain.ExplainUiState
  import com.huoyejia.domain.ExplainPack
@@ -25,6 +27,7 @@ import kotlinx.coroutines.launch
 
 class HuoyejiaViewModel(application: Application) : AndroidViewModel(application) {
     private val container = (application as HuoyejiaApp).container
+    private val notificationScheduler = NotificationScheduler(application.applicationContext)
 
     val notes: StateFlow<List<NoteEntity>> = container.noteRepository.observeNotes()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -59,6 +62,16 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
         )
     )
     val explainState: StateFlow<ExplainUiState> = _explainState.asStateFlow()
+
+    fun refreshAll() {
+        viewModelScope.launch {
+            _isBusy.value = true
+            container.seedData.ensureSeeded()
+            container.processor.schedulePendingNotes()
+            refreshStats()
+            _isBusy.value = false
+        }
+    }
 
     init {
         viewModelScope.launch {
@@ -185,8 +198,15 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
 
     fun completeCard(card: ReviewCardEntity) {
         viewModelScope.launch {
-            container.reviewCardRepository.markDone(card.cardId)
+            container.reviewCardRepository.markDone(card.cardId, System.currentTimeMillis())
             container.noteRepository.markReviewed(card.noteId)
+            refreshStats()
+        }
+    }
+    
+    fun generateReviewCardsForLeastReviewed(count: Int = 3) {
+        viewModelScope.launch {
+            container.reviewCardGenerator.generateReviewCardsForLeastReviewed(count)
             refreshStats()
         }
     }
@@ -464,5 +484,22 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
     private suspend fun refreshStats() {
         val current = container.noteRepository.loadAllNotes()
         container.statsRepository.upsert(StatsCalculator.calculate(current))
+    }
+    
+    // 通知管理方法
+    fun enableNotifications() {
+        notificationScheduler.enableNotifications()
+    }
+    
+    fun testNotification() {
+        DailyReviewAlarm.testNotification(getApplication())
+    }
+    
+    fun disableNotifications() {
+        notificationScheduler.disableNotifications()
+    }
+    
+    fun areNotificationsEnabled(): Boolean {
+        return notificationScheduler.areNotificationsEnabled()
     }
 }

@@ -8,8 +8,10 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.fillMaxSize
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.Manifest
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -39,6 +41,7 @@ import com.huoyejia.ui.FolderPickerDialog
 import com.huoyejia.ui.HuoyejiaScaffold
 import com.huoyejia.ui.NoteDetailScreen
 import com.huoyejia.ui.ReviewScreen
+import com.huoyejia.ui.SettingsScreen
 import com.huoyejia.ui.theme.HuoyejiaTheme
 
 class MainActivity : ComponentActivity() {
@@ -57,12 +60,31 @@ class MainActivity : ComponentActivity() {
     private var floatingFolderPickerPending by mutableStateOf<PendingCapture?>(null)
     private var launchFloatingAfterPermission = false
     private var lastBackPressTime = 0L
+    
+    private fun requestPermissions() {
+        val app = application as HuoyejiaApp
+        
+        // 申请通知权限
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) 
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    HuoyejiaApp.REQUEST_NOTIFICATIONS
+                )
+                return
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingCapture = intent.toPendingCapture()
         floatingFolderPickerPending = pendingCapture?.takeIf { it.showFolderPicker }
         openCaptureRequested = intent.getBooleanExtra(EXTRA_NAV_CAPTURE, false) || intent.isTextShare()
+        
+        // 申请权限
+        requestPermissions()
 
         setContent {
             HuoyejiaTheme {
@@ -81,7 +103,7 @@ class MainActivity : ComponentActivity() {
                 val processingProgress by viewModel.processingProgress.collectAsState()
                 val pending = pendingCapture
                 val shouldOpenCapture = pending != null || openCaptureRequested
-                val mainRoutes = listOf("collections", "capture", "review", "dashboard")
+                val mainRoutes = listOf("collections", "capture", "review", "dashboard", "settings")
                 val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
 
                 val activity = this
@@ -164,6 +186,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenFloatingCapture = ::openFloatingCapture,
                                 folders = folders,
                                 onCreateFolder = viewModel::createFolder,
+                                notes = notes,
                                 processingProgress = processingProgress,
                                 isBusy = isBusy,
                                 pendingCaptureTitle = pending?.title,
@@ -191,11 +214,19 @@ class MainActivity : ComponentActivity() {
                             ReviewScreen(
                                 notes = notes,
                                 cards = cards,
-                                onDone = viewModel::completeCard
+                                onDone = viewModel::completeCard,
+                                onGenerateMore = {
+                                    viewModel.generateReviewCardsForLeastReviewed(3)
+                                }
                             )
                         }
                         composable("dashboard") {
                             DashboardScreen(stats = stats, notes = notes, cards = cards)
+                        }
+                        composable("settings") {
+                            SettingsScreen(viewModel = viewModel, onBack = {
+                                navController.popBackStack()
+                            })
                         }
                         composable(
                             "collection_detail/{folderId}",

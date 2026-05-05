@@ -152,7 +152,9 @@ data class ReviewCardEntity(
     @ColumnInfo(name = "created_at")
     val createdAt: Long,
     @ColumnInfo(name = "reviewed_at")
-    val reviewedAt: Long?
+    val reviewedAt: Long?,
+    @ColumnInfo(name = "review_count")
+    val reviewCount: Int = 0
 )
 
 @Entity(tableName = "user_stats")
@@ -174,11 +176,4 @@ data class UserStatsEntity(
     val hoardingIndex: Int,
     @ColumnInfo(name = "index_reason")
     val indexReason: String
-)
-
-data class NoteWithEmbedding(
-    @androidx.room.Embedded
-    val note: NoteEntity,
-    @ColumnInfo(name = "vector_blob")
-    val vectorBlob: ByteArray
 )

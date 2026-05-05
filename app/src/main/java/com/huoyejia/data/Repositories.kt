@@ -7,7 +7,6 @@ import com.huoyejia.data.local.NoteDao
 import com.huoyejia.data.local.NoteEmbeddingEntity
 import com.huoyejia.data.local.NoteEntity
 import com.huoyejia.data.local.NoteRelationEntity
-import com.huoyejia.data.local.NoteWithEmbedding
 import com.huoyejia.data.local.RelationDao
 import com.huoyejia.data.local.ReviewCardDao
 import com.huoyejia.data.local.ReviewCardEntity
@@ -60,7 +59,7 @@ class NoteRepository(
         noteDao.deleteNote(noteId)
     }
 
-    suspend fun loadWithEmbeddings(excludeNoteId: String = ""): List<NoteWithEmbedding> {
+    suspend fun loadWithEmbeddings(excludeNoteId: String = ""): List<NoteEntity> {
         return noteDao.loadWithEmbeddings(excludeNoteId)
     }
 }
@@ -68,7 +67,7 @@ class NoteRepository(
 class RelationRepository(private val dao: RelationDao) {
     fun observeRelations(): Flow<List<NoteRelationEntity>> = dao.observeRelations()
 
-    suspend fun getForNote(noteId: String): List<NoteRelationEntity> = dao.getForNote(noteId)
+    suspend fun getForNote(noteId: String): List<NoteRelationEntity> = dao.findForNote(noteId)
 
     suspend fun upsertAll(relations: List<NoteRelationEntity>) = dao.upsertAll(relations)
 
@@ -80,7 +79,13 @@ class ReviewCardRepository(private val dao: ReviewCardDao) {
 
     suspend fun upsert(card: ReviewCardEntity) = dao.upsert(card)
 
-    suspend fun markDone(cardId: String) = dao.markDone(cardId, System.currentTimeMillis())
+    suspend fun markDone(cardId: String, reviewedAt: Long) = dao.markDone(cardId, reviewedAt)
+
+    suspend fun incrementReviewCount(cardId: String) = dao.incrementReviewCount(cardId)
+
+    suspend fun getLeastReviewedCards(limit: Int): List<ReviewCardEntity> = dao.getLeastReviewedCards(limit)
+
+    suspend fun getPendingCardCount(): Int = dao.getPendingCardCount()
 
     suspend fun deleteForNote(noteId: String) = dao.deleteForNote(noteId)
 }

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -37,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -70,7 +72,8 @@ fun CollectionListScreen(
     folders: List<FolderEntity>,
     onCreateFolder: (String) -> Unit,
     onDeleteFolder: (String) -> Unit = {},
-    onDeleteNote: (String) -> Unit = {}
+    onDeleteNote: (String) -> Unit = {},
+    onRefresh: () -> Unit = {}
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
     var newFolderName by remember { mutableStateOf("") }
@@ -165,6 +168,13 @@ fun CollectionListScreen(
                             Icon(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = "新建收藏夹",
+                                tint = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+                        IconButton(onClick = { onRefresh() }) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "刷新",
                                 tint = MaterialTheme.colorScheme.onPrimary
                             )
                         }
@@ -282,13 +292,10 @@ fun CollectionListScreen(
                                         LazyRow(
                                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
-                                            items(folderNotes.take(3), key = { it.noteId }) { note ->
-                                                Text(
-                                                    text = note.sourceTitle,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    fontSize = 12.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
+                                            items(folderNotes, key = { it.noteId }) { note ->
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                                                     modifier = Modifier
                                                         .combinedClickable(
                                                             onClick = { /* 可以跳转到详情页 */ },
@@ -297,12 +304,16 @@ fun CollectionListScreen(
                                                                 showDeleteNoteDialog = true
                                                             }
                                                         )
-                                                        .background(
-                                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                                                            RoundedCornerShape(4.dp)
-                                                        )
-                                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                                )
+                                                ) {
+                                                    Text(
+                                                        text = note.sourceTitle,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        fontSize = 12.sp,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    )
+                                                }
                                             }
                                         }
                                     }

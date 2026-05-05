@@ -30,7 +30,8 @@ private val tabs = listOf(
     Tab("collections", "回流箱", "↺"),
     Tab("capture", "采集", "+"),
     Tab("review", "复习", "✓"),
-    Tab("dashboard", "指数", "#")
+    Tab("dashboard", "指数", "#"),
+    Tab("settings", "设置", "⚙")
 )
 
 @Composable

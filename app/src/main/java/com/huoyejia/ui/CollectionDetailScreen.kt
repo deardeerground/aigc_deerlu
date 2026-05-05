@@ -301,6 +301,7 @@ internal fun CollectionCardItem(
                 // 右侧：已回流次数
                 Card(
                     modifier = Modifier
+                        .padding(start = 12.dp)
                         .width(80.dp)
                         .height(40.dp),
                     colors = CardDefaults.cardColors(
