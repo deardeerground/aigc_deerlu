@@ -1,20 +1,36 @@
 package com.huoyejia
 
+import androidx.compose.animation.fadeIn
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.layout.fillMaxSize
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.OnBackPressedDispatcher
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import com.huoyejia.ui.CaptureScreen
 import com.huoyejia.ui.CollectionDetailScreen
 import com.huoyejia.ui.CollectionListScreen
@@ -23,7 +39,6 @@ import com.huoyejia.ui.FolderPickerDialog
 import com.huoyejia.ui.HuoyejiaScaffold
 import com.huoyejia.ui.NoteDetailScreen
 import com.huoyejia.ui.ReviewScreen
-// import com.huoyejia.ui.SearchScreen  // 搜索页面已禁用
 import com.huoyejia.ui.theme.HuoyejiaTheme
 
 class MainActivity : ComponentActivity() {
@@ -41,16 +56,19 @@ class MainActivity : ComponentActivity() {
     private var openCaptureRequested by mutableStateOf(false)
     private var floatingFolderPickerPending by mutableStateOf<PendingCapture?>(null)
     private var launchFloatingAfterPermission = false
+    private var lastBackPressTime = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingCapture = intent.toPendingCapture()
         floatingFolderPickerPending = pendingCapture?.takeIf { it.showFolderPicker }
         openCaptureRequested = intent.getBooleanExtra(EXTRA_NAV_CAPTURE, false) || intent.isTextShare()
+
         setContent {
             HuoyejiaTheme {
                 val viewModel: HuoyejiaViewModel = viewModel()
                 val navController = rememberNavController()
+                
                 val notes by viewModel.notes.collectAsState()
                 val relations by viewModel.relations.collectAsState()
                 val cards by viewModel.cards.collectAsState()
@@ -63,6 +81,29 @@ class MainActivity : ComponentActivity() {
                 val processingProgress by viewModel.processingProgress.collectAsState()
                 val pending = pendingCapture
                 val shouldOpenCapture = pending != null || openCaptureRequested
+                val mainRoutes = listOf("collections", "capture", "review", "dashboard")
+                val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
+
+                val activity = this
+                DisposableEffect(currentRoute) {
+                    val callback = object : OnBackPressedCallback(true) {
+                        override fun handleOnBackPressed() {
+                            if (currentRoute in mainRoutes) {
+                                val currentTime = System.currentTimeMillis()
+                                if (currentTime - lastBackPressTime < 2000) {
+                                    activity.finish()
+                                } else {
+                                    lastBackPressTime = currentTime
+                                    Toast.makeText(activity, "再按一次退出应用", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                navController.popBackStack()
+                            }
+                        }
+                    }
+                    activity.onBackPressedDispatcher.addCallback(activity, callback)
+                    onDispose { }
+                }
 
                 LaunchedEffect(shouldOpenCapture) {
                     if (shouldOpenCapture) {
@@ -73,8 +114,39 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                HuoyejiaScaffold(navController = navController, isBusy = isBusy) {
-                    NavHost(navController = navController, startDestination = "collections") {
+                HuoyejiaScaffold(
+                    navController = navController,
+                    isBusy = isBusy
+                ) {
+                    NavHost(
+                        navController = navController,
+                        startDestination = "collections",
+                        modifier = Modifier.fillMaxSize(),
+                        enterTransition = {
+                            slideInHorizontally(
+                                initialOffsetX = { fullWidth: Int -> fullWidth },
+                                animationSpec = tween(300)
+                            ) + fadeIn(animationSpec = tween(300))
+                        },
+                        exitTransition = {
+                            slideOutHorizontally(
+                                targetOffsetX = { fullWidth: Int -> -fullWidth / 3 },
+                                animationSpec = tween(300)
+                            ) + fadeOut(animationSpec = tween(300))
+                        },
+                        popEnterTransition = {
+                            slideInHorizontally(
+                                initialOffsetX = { fullWidth: Int -> -fullWidth / 3 },
+                                animationSpec = tween(300)
+                            ) + fadeIn(animationSpec = tween(300))
+                        },
+                        popExitTransition = {
+                            slideOutHorizontally(
+                                targetOffsetX = { fullWidth: Int -> fullWidth },
+                                animationSpec = tween(300)
+                            ) + fadeOut(animationSpec = tween(300))
+                        }
+                    ) {
                         composable("collections") {
                             CollectionListScreen(
                                 navController = navController,
@@ -125,7 +197,10 @@ class MainActivity : ComponentActivity() {
                         composable("dashboard") {
                             DashboardScreen(stats = stats, notes = notes, cards = cards)
                         }
-                        composable("collection_detail/{folderId}") { entry ->
+                        composable(
+                            "collection_detail/{folderId}",
+                            arguments = listOf(navArgument("folderId") { type = NavType.StringType })
+                        ) { entry ->
                             val folderId = entry.arguments?.getString("folderId").orEmpty()
                             CollectionDetailScreen(
                                 navController = navController,
@@ -135,8 +210,18 @@ class MainActivity : ComponentActivity() {
                                 onDeleteNote = viewModel::deleteNote
                             )
                         }
-                        composable("detail/{noteId}") { entry ->
+                        composable(
+                            "detail/{noteId}?fromDuplicateWarning={fromDuplicateWarning}",
+                            arguments = listOf(
+                                navArgument("noteId") { type = NavType.StringType },
+                                navArgument("fromDuplicateWarning") {
+                                    type = NavType.BoolType
+                                    defaultValue = false
+                                }
+                            )
+                        ) { entry ->
                             val noteId = entry.arguments?.getString("noteId").orEmpty()
+                            val fromDuplicateWarning = entry.arguments?.getBoolean("fromDuplicateWarning") ?: false
                             NoteDetailScreen(
                                 note = viewModel.noteById(noteId),
                                 notes = notes,
@@ -144,13 +229,23 @@ class MainActivity : ComponentActivity() {
                                 cards = cards,
                                 explainState = explainState,
                                 assistantState = cardAssistantState,
-                                onBack = { navController.popBackStack() },
-                                onOpenNote = { navController.navigate("detail/$it") },
-                                onStartReview = { navController.navigate("review") },
+                                onBack = {
+                                    navController.navigate("collections") {
+                                        popUpTo("collections") { inclusive = true }
+                                    }
+                                },
+                                onOpenNote = { param ->
+                                    val targetNoteId = param.substringBefore("?")
+                                    navController.navigate("detail/$targetNoteId")
+                                },
+                                onStartReview = {
+                                    navController.navigate("review")
+                                },
                                 onGeneratePpt = viewModel::generateCardPpt,
                                 onGenerateVideo = viewModel::generateCardVideo,
                                 onAskQuestion = viewModel::askCardQuestion,
-                                onUpdateTitle = viewModel::updateNoteTitle
+                                onUpdateTitle = viewModel::updateNoteTitle,
+                                fromDuplicateWarning = fromDuplicateWarning
                             )
                         }
                     }

@@ -125,8 +125,11 @@ fun CollectionDetailScreen(
                     )
                 },
                 navigationIcon = {
-                    // 返回箭头按钮
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = {
+                        navController.navigate("collections") {
+                            popUpTo("collections") { inclusive = true }
+                        }
+                    }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "返回",

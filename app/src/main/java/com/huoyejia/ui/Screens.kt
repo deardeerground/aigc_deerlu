@@ -1032,7 +1032,8 @@ fun NoteDetailScreen(
     onGeneratePpt: (String) -> Unit,
     onGenerateVideo: (String) -> Unit,
     onAskQuestion: (String, String) -> Unit,
-    onUpdateTitle: (String, String) -> Unit
+    onUpdateTitle: (String, String) -> Unit,
+    fromDuplicateWarning: Boolean = false
 ) {
     if (note == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -1040,10 +1041,12 @@ fun NoteDetailScreen(
         }
         return
     }
-    val relatedRelations = relations.filter { it.noteIdFrom == note.noteId || it.noteIdTo == note.noteId }
+    val currentNoteId = note.noteId
+    val relatedRelations = relations.filter { it.noteIdFrom == currentNoteId || it.noteIdTo == currentNoteId }
     val relatedNotes = relatedRelations.mapNotNull { relation ->
-        val otherId = if (relation.noteIdFrom == note.noteId) relation.noteIdTo else relation.noteIdFrom
-        notes.firstOrNull { it.noteId == otherId }?.let { relation to it }
+        val otherId = if (relation.noteIdFrom == currentNoteId) relation.noteIdTo else relation.noteIdFrom
+        if (otherId == currentNoteId) null
+        else notes.firstOrNull { it.noteId == otherId }?.let { relation to it }
     }
     val card = cards.firstOrNull { it.noteId == note.noteId }
     val duplicateCount = relatedRelations.duplicateCountFor(note.noteId)
@@ -1085,11 +1088,12 @@ fun NoteDetailScreen(
             }) { Text("改标题") }
         }
         SourceMaterialCard(note)
-        if (note.duplicateScore >= 0.45f || duplicateCount > 0) {
+        if (!fromDuplicateWarning && (note.duplicateScore >= 0.45f || duplicateCount > 0)) {
             DuplicateWarningCard(
                 duplicateCount = maxOf(duplicateCount, 1),
-                onViewExisting = {
-                    relatedNotes.firstOrNull()?.second?.noteId?.let(onOpenNote)
+                relatedNotes = relatedNotes,
+                onViewExisting = { noteId ->
+                    onOpenNote("$noteId?fromDuplicateWarning=true")
                 },
                 onStartReview = onStartReview
             )
@@ -1921,9 +1925,12 @@ private fun DuplicateInlineWarning(
 @Composable
 private fun DuplicateWarningCard(
     duplicateCount: Int,
-    onViewExisting: () -> Unit,
+    relatedNotes: List<Pair<NoteRelationEntity, NoteEntity>>,
+    onViewExisting: (String) -> Unit,
     onStartReview: () -> Unit
 ) {
+    var showRelatedList by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF2D8)),
@@ -1934,10 +1941,39 @@ private fun DuplicateWarningCard(
             Text("重复收藏提示", color = Color(0xFF7A4A00), fontWeight = FontWeight.Black)
             Text("你已经收藏过类似内容 $duplicateCount 次。不要继续堆材料，先看已有笔记或进入回流卡片。", lineHeight = 20.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onViewExisting) { Text("查看已有笔记") }
+                OutlinedButton(onClick = { showRelatedList = true }) { Text("查看已有笔记") }
                 Button(onClick = onStartReview) { Text("进入复习卡片") }
             }
         }
+    }
+
+    if (showRelatedList) {
+        AlertDialog(
+            onDismissRequest = { showRelatedList = false },
+            title = { Text("选择已有笔记") },
+            text = {
+                LazyColumn {
+                    items(relatedNotes) { (_, note) ->
+                        TextButton(
+                            onClick = {
+                                onViewExisting(note.noteId)
+                                showRelatedList = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = note.sourceTitle?.take(30) ?: "笔记",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showRelatedList = false }) { Text("关闭") }
+            }
+        )
     }
 }
 

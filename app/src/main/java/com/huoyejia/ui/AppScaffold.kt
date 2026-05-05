@@ -1,13 +1,13 @@
 package com.huoyejia.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -17,7 +17,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -39,21 +41,17 @@ fun HuoyejiaScaffold(
 ) {
     val backStack by navController.currentBackStackEntryAsState()
     val current = backStack?.destination?.route.orEmpty()
-    // 获取导航图的起始路由（应该是"collections"）
     val startDestination = "collections"
 
     Scaffold(
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.primary) {
                 tabs.forEach { tab ->
-                    NavigationBarItem(
+NavigationBarItem(
                         selected = current == tab.route,
                         onClick = {
-                            navController.navigate(tab.route) {
-                                launchSingleTop = true
-                                // 弹出到起始页面，确保每次点击都从根状态开始
-                                popUpTo(startDestination) { saveState = false }
-                                restoreState = false
+                            if (current != tab.route) {
+                                navController.navigate(tab.route)
                             }
                         },
                         icon = { Text(tab.symbol) },
@@ -69,7 +67,7 @@ fun HuoyejiaScaffold(
                 }
             }
         }
-    ) { padding ->
+) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
