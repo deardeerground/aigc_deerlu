@@ -60,6 +60,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+<<<<<<< Updated upstream
+=======
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+>>>>>>> Stashed changes
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
@@ -82,6 +89,7 @@ import com.huoyejia.domain.ExplainPack
 import com.huoyejia.domain.NoteProcessingProgress
 import com.huoyejia.domain.ScoredNote
 import com.huoyejia.util.JsonText
+import com.huoyejia.util.UrlTools
 import java.io.File
 import java.util.UUID
 import java.time.Instant
@@ -230,10 +238,10 @@ fun CaptureScreen(
     }
 
     fun saveToFolder(folderEntity: FolderEntity) {
-        val resolvedUrl = url.trim()
         val resolvedText = text.trim()
+        val resolvedUrl = UrlTools.normalizeUrl(url).orElseUrlFrom(resolvedText)
         val sourceType = when {
-            resolvedUrl.startsWith("http://") || resolvedUrl.startsWith("https://") -> "web"
+            !resolvedUrl.isNullOrBlank() -> "web"
             screenshotUri != null -> "image"
             else -> "manual"
         }
@@ -241,7 +249,7 @@ fun CaptureScreen(
             title.ifBlank { "未命名收藏" },
             resolvedText,
             sourceType,
-            resolvedUrl.ifBlank { null },
+            resolvedUrl,
             screenshotUri,
             folderEntity.folderId
         )
@@ -676,7 +684,9 @@ fun DashboardScreen(
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary),
             shape = RoundedCornerShape(28.dp),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.40f)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
             Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(value.toString(), color = Color.White, fontSize = 54.sp, fontWeight = FontWeight.Black)
@@ -1168,17 +1178,20 @@ fun NoteDetailScreen(
 @Composable
 private fun SourceMaterialCard(note: NoteEntity) {
     val context = LocalContext.current
-    val originalText = cleanOriginalText(note.rawText ?: note.noteContent.ifBlank { "暂无原文内容" })
+    val userText = note.rawText?.let(::cleanOriginalText).orEmpty()
+    val processedText = note.noteContent.takeIf { it.isNotBlank() && it != note.rawText.orEmpty() }.orEmpty()
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        colors = techCardColors(),
+        border = techPanelBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("原文材料", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
+            Text("????", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
             if (!note.url.isNullOrBlank()) {
                 SourceLine(
-                    label = "原文网址",
+                    label = "????",
                     value = note.url,
                     onClick = { openUrl(context, note.url) },
                     onLongClick = { copyText(context, "原文网址", note.url) }
@@ -1192,9 +1205,17 @@ private fun SourceMaterialCard(note: NoteEntity) {
                 )
                 TinyText("截图文件已保存，后续可接入图片预览和 OCR 高亮。")
             }
+            if (userText.isNotBlank()) {
+                SourceLine(
+                    label = "????",
+                    value = userText,
+                    maxLines = 6,
+                    canExpand = true
+                )
+            }
             SourceLine(
-                label = "原文",
-                value = originalText,
+                label = if (note.url.isNullOrBlank()) "??" else "???? / AI ????",
+                value = processedText.ifBlank { "??????????????????????????????????????" },
                 maxLines = 6,
                 onLongClick = { copyText(context, "原文", originalText) }
             )
@@ -1484,6 +1505,10 @@ private fun openUrl(context: Context, url: String) {
     }
 }
 
+private fun String?.orElseUrlFrom(text: String): String? {
+    return this ?: UrlTools.extractFirstUrl(text)
+}
+
 private fun copyText(context: Context, label: String, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
@@ -1492,14 +1517,18 @@ private fun copyText(context: Context, label: String, text: String) {
 @Composable
 private fun HeroCard(title: String, subtitle: String, action: String, onAction: () -> Unit) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         shape = RoundedCornerShape(30.dp),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.42f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text(title, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Black)
-            Text(subtitle, color = Color.White.copy(alpha = 0.9f), lineHeight = 20.sp)
-            Button(onClick = onAction) { Text(action) }
+        Box(modifier = Modifier.background(TechPrimaryGradient)) {
+            Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(title, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Black)
+                Text(subtitle, color = Color.White.copy(alpha = 0.9f), lineHeight = 20.sp)
+                Button(onClick = onAction) { Text(action) }
+            }
         }
     }
 }
@@ -1526,7 +1555,9 @@ private fun NoteCard(
                 onLongClick = onLongClick
             ),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = techCardColors(),
+        border = techPanelBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1555,8 +1586,9 @@ private fun NoteCard(
 private fun ReviewCardView(card: ReviewCardEntity, noteTitle: String, onDone: () -> Unit) {
     Card(
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.45f))
+        colors = techCardColors(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.28f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(noteTitle.ifBlank { "关联复习" }, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
@@ -1578,7 +1610,10 @@ private fun ResultCard(result: ScoredNote, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(22.dp)
+        shape = RoundedCornerShape(22.dp),
+        colors = techCardColors(),
+        border = techPanelBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(result.note.sourceTitle, fontWeight = FontWeight.Bold)
@@ -1595,7 +1630,9 @@ private fun RelationCard(relation: NoteRelationEntity, note: NoteEntity, onClick
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = techCardColors(),
+        border = techPanelBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("${relation.relationType} ${(relation.confidence * 100).toInt()}%", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -1612,7 +1649,9 @@ private fun AiSummaryCard(summary: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = techCardColors(),
+        border = techPanelBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("AI 摘要", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -1643,7 +1682,9 @@ private fun AssistCard(title: String, body: String, markdown: Boolean = false) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = techCardColors(),
+        border = techPanelBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -1694,8 +1735,8 @@ private fun parseSimpleMarkdown(text: String) = buildAnnotatedString {
 private fun MetricPill(label: String, value: String) {
     Surface(
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f))
+        color = Color.White.copy(alpha = 0.82f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.20f))
     ) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
             Text(value, fontSize = 20.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSecondaryContainer)
@@ -1715,8 +1756,8 @@ private fun TagRow(tags: List<String>) {
 private fun StatusChip(text: String) {
     Surface(
         shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.tertiaryContainer,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f))
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
     ) {
         Text(
             text,
@@ -1763,7 +1804,7 @@ private fun InterventionCard(collected: Int, understood: Int, index: Int, onClic
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF8A2D20)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondary),
         shape = RoundedCornerShape(28.dp)
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1771,7 +1812,7 @@ private fun InterventionCard(collected: Int, understood: Int, index: Int, onClic
             Text("你今天收藏 $collected 条，仅理解 $understood 条", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
             Text("囤积指数 $index 已超过安全线。点击直接进入回流卡片，把收藏转成理解。", color = Color.White.copy(alpha = 0.9f), lineHeight = 20.sp)
             Surface(shape = RoundedCornerShape(50), color = Color.White) {
-                Text("现在处理", modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp), color = Color(0xFF8A2D20), fontWeight = FontWeight.Bold)
+                Text("现在处理", modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1785,7 +1826,7 @@ private fun DuplicateInlineWarning(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = Color(0xFFFFF2D8),
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1806,9 +1847,9 @@ private fun DuplicateWarningCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF2D8)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f)),
         shape = RoundedCornerShape(22.dp),
-        border = BorderStroke(1.dp, Color(0xFFE59F2A))
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.24f))
     ) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("重复收藏提示", color = Color(0xFF7A4A00), fontWeight = FontWeight.Black)

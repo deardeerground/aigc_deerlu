@@ -9,6 +9,11 @@ import com.huoyejia.data.local.NoteEntity
 import com.huoyejia.data.local.NoteRelationEntity
 import com.huoyejia.data.local.ReviewCardEntity
 import com.huoyejia.data.local.UserStatsEntity
+<<<<<<< Updated upstream
+=======
+import com.huoyejia.service.NotificationScheduler
+import com.huoyejia.service.ReminderTime
+>>>>>>> Stashed changes
 import com.huoyejia.domain.CardAssistantState
  import com.huoyejia.domain.ExplainUiState
  import com.huoyejia.domain.ExplainPack
@@ -455,4 +460,38 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
         val current = container.noteRepository.loadAllNotes()
         container.statsRepository.upsert(StatsCalculator.calculate(current))
     }
+<<<<<<< Updated upstream
+=======
+    
+    // 通知管理方法
+    fun enableNotifications() {
+        notificationScheduler.enableNotifications()
+    }
+    
+    fun disableNotifications() {
+        notificationScheduler.disableNotifications()
+    }
+    
+    fun areNotificationsEnabled(): Boolean {
+        return notificationScheduler.areNotificationsEnabled()
+    }
+    
+    fun requestExactAlarmPermission(): Intent {
+        return notificationScheduler.requestExactAlarmPermission()
+    }
+    
+    fun refreshNotificationState() {
+        notificationScheduler.refreshState()
+    }
+
+    fun setReminderTime(hour: Int, minute: Int) {
+        notificationScheduler.setReminderTime(hour, minute)
+    }
+    
+    val notificationsEnabled: StateFlow<Boolean> = notificationScheduler.isEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val reminderTime: StateFlow<ReminderTime> = notificationScheduler.reminderTime
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ReminderTime(21, 13))
+>>>>>>> Stashed changes
 }
