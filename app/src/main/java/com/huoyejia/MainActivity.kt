@@ -1,25 +1,11 @@
-package com.huoyejia
+﻿package com.huoyejia
 
-import androidx.compose.animation.fadeIn
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.foundation.layout.fillMaxSize
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.Manifest
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.OnBackPressedCallback
-import androidx.activity.OnBackPressedDispatcher
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -43,6 +29,8 @@ import com.huoyejia.ui.NoteDetailScreen
 import com.huoyejia.ui.ReviewScreen
 import com.huoyejia.ui.SettingsScreen
 import com.huoyejia.ui.theme.HuoyejiaTheme
+import com.huoyejia.service.DailyReviewAlarm
+import com.huoyejia.util.UrlTools
 
 class MainActivity : ComponentActivity() {
 
@@ -60,13 +48,13 @@ class MainActivity : ComponentActivity() {
     private var floatingFolderPickerPending by mutableStateOf<PendingCapture?>(null)
     private var launchFloatingAfterPermission = false
     private var lastBackPressTime = 0L
-    
+
     private fun requestPermissions() {
         val app = application as HuoyejiaApp
-        
+
         // 申请通知权限
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) 
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(
                     arrayOf(Manifest.permission.POST_NOTIFICATIONS),
@@ -82,15 +70,18 @@ class MainActivity : ComponentActivity() {
         pendingCapture = intent.toPendingCapture()
         floatingFolderPickerPending = pendingCapture?.takeIf { it.showFolderPicker }
         openCaptureRequested = intent.getBooleanExtra(EXTRA_NAV_CAPTURE, false) || intent.isTextShare()
-        
+
         // 申请权限
+        openCollectionsRequested = intent.getBooleanExtra(DailyReviewAlarm.EXTRA_OPEN_COLLECTIONS, false)
         requestPermissions()
+
+
 
         setContent {
             HuoyejiaTheme {
                 val viewModel: HuoyejiaViewModel = viewModel()
                 val navController = rememberNavController()
-                
+
                 val notes by viewModel.notes.collectAsState()
                 val relations by viewModel.relations.collectAsState()
                 val cards by viewModel.cards.collectAsState()
@@ -136,6 +127,20 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+
+                HuoyejiaScaffold(navController = navController, isBusy = isBusy) {
+                    NavHost(navController = navController, startDestination = "collections") {
+
+                LaunchedEffect(openCollectionsRequested) {
+                    if (openCollectionsRequested) {
+                        navController.navigate("collections") {
+                            launchSingleTop = true
+                            popUpTo("collections") { inclusive = true }
+                        }
+                        openCollectionsRequested = false
+                    }
+                }
+
                 HuoyejiaScaffold(
                     navController = navController,
                     isBusy = isBusy
@@ -169,6 +174,7 @@ class MainActivity : ComponentActivity() {
                             ) + fadeOut(animationSpec = tween(300))
                         }
                     ) {
+
                         composable("collections") {
                             CollectionListScreen(
                                 navController = navController,
@@ -293,15 +299,17 @@ class MainActivity : ComponentActivity() {
                         onConfirm = { folder ->
                             val resolvedUrl = capture.url.trim()
                             val resolvedText = capture.text.trim()
+                            val normalizedUrl = UrlTools.normalizeUrl(resolvedUrl)
+                                ?: UrlTools.extractFirstUrl(resolvedText)
                             val sourceType = when {
-                                resolvedUrl.startsWith("http://") || resolvedUrl.startsWith("https://") -> "web"
+                                !normalizedUrl.isNullOrBlank() -> "web"
                                 else -> "manual"
                             }
                             viewModel.addCaptureNote(
                                 capture.title.ifBlank { "浮窗采集" },
                                 resolvedText,
                                 sourceType,
-                                resolvedUrl.ifBlank { null },
+                                normalizedUrl,
                                 null,
                                 folder.folderId
                             )
@@ -321,6 +329,7 @@ class MainActivity : ComponentActivity() {
         pendingCapture = intent.toPendingCapture()
         floatingFolderPickerPending = pendingCapture?.takeIf { it.showFolderPicker }
         openCaptureRequested = intent.getBooleanExtra(EXTRA_NAV_CAPTURE, false) || intent.isTextShare()
+        openCollectionsRequested = intent.getBooleanExtra(DailyReviewAlarm.EXTRA_OPEN_COLLECTIONS, false)
     }
 
     override fun onResume() {
@@ -354,7 +363,7 @@ class MainActivity : ComponentActivity() {
         if (!getBooleanExtra(EXTRA_OPEN_CAPTURE, false) && sharedText.isBlank()) return null
         val explicitText = getStringExtra(EXTRA_CAPTURE_TEXT).orEmpty()
         val explicitUrl = getStringExtra(EXTRA_CAPTURE_URL).orEmpty()
-        val sharedUrl = extractFirstUrl(sharedText).orEmpty()
+        val sharedUrl = UrlTools.extractFirstUrl(sharedText).orEmpty()
         val text = explicitText.ifBlank {
             if (sharedUrl.isNotBlank() && sharedText == sharedUrl) "" else sharedText
         }
@@ -362,7 +371,7 @@ class MainActivity : ComponentActivity() {
         if (text.isBlank() && url.isBlank()) return null
         return PendingCapture(
             requestId = System.currentTimeMillis(),
-            title = getStringExtra(EXTRA_CAPTURE_TITLE).orEmpty().ifBlank { "分享采集" },
+            title = getStringExtra(EXTRA_CAPTURE_TITLE).orEmpty().ifBlank { "鍒嗕韩閲囬泦" },
             text = text,
             url = url,
             showFolderPicker = getBooleanExtra(EXTRA_PICK_FOLDER, true)
@@ -373,9 +382,6 @@ class MainActivity : ComponentActivity() {
         return action == Intent.ACTION_SEND && type == "text/plain" && !getStringExtra(Intent.EXTRA_TEXT).isNullOrBlank()
     }
 
-    private fun extractFirstUrl(text: String): String? {
-        return Regex("""https?://\S+""").find(text)?.value?.trimEnd('.', ',', ';', '。', '，', '；')
-    }
 }
 
 private data class PendingCapture(

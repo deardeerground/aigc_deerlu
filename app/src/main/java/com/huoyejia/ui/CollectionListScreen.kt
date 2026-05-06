@@ -85,13 +85,14 @@ fun CollectionListScreen(
     var noteToDelete by remember { mutableStateOf<NoteEntity?>(null) }
 
     Scaffold(
+        containerColor = Color.Transparent,
         topBar = {
             if (isSearchExpanded) {
                 // 展开的搜索框
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.primary)
+                        .background(TechPrimaryGradient)
                 ) {
                     // 返回按钮
                     IconButton(
@@ -153,29 +154,30 @@ fun CollectionListScreen(
                         )
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimary
+                        containerColor = Color.White.copy(alpha = 0.84f),
+                        titleContentColor = MaterialTheme.colorScheme.primary
                     ),
                     actions = {
                         IconButton(onClick = { isSearchExpanded = true }) {
                             Icon(
                                 imageVector = Icons.Default.Search,
                                 contentDescription = "搜索",
-                                tint = MaterialTheme.colorScheme.onPrimary
+                                tint = MaterialTheme.colorScheme.primary
                             )
                         }
                         IconButton(onClick = { showCreateDialog = true }) {
                             Icon(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = "新建收藏夹",
-                                tint = MaterialTheme.colorScheme.onPrimary
+                                tint = MaterialTheme.colorScheme.primary
                             )
                         }
+
                         IconButton(onClick = { onRefresh() }) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
                                 contentDescription = "刷新",
-                                tint = MaterialTheme.colorScheme.onPrimary
+                                tint = MaterialTheme.colorScheme.primary
                             )
                         }
                     }
@@ -183,11 +185,10 @@ fun CollectionListScreen(
             }
         }
     ) { paddingValues ->
-        Column(
+        TechBackground(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .background(MaterialTheme.colorScheme.background)
         ) {
             // ====================== 关键修改1 ======================
             // 把变量定义 移到 LazyColumn 外部（LazyListScope 不能定义变量）
@@ -255,9 +256,10 @@ fun CollectionListScreen(
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                                    containerColor = Color.White.copy(alpha = 0.90f)
                                 ),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                                border = techPanelBorder(),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                             ) {
                                 Column(
                                     modifier = Modifier.padding(16.dp)
@@ -292,10 +294,20 @@ fun CollectionListScreen(
                                         LazyRow(
                                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
+<<<<<<< Updated upstream
+                                            items(folderNotes.take(3), key = { it.noteId }) { note ->
+                                                Text(
+                                                    text = note.sourceTitle,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    fontSize = 12.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+=======
                                             items(folderNotes, key = { it.noteId }) { note ->
                                                 Surface(
-                                                    shape = RoundedCornerShape(4.dp),
-                                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+>>>>>>> Stashed changes
                                                     modifier = Modifier
                                                         .combinedClickable(
                                                             onClick = { /* 可以跳转到详情页 */ },
@@ -304,16 +316,12 @@ fun CollectionListScreen(
                                                                 showDeleteNoteDialog = true
                                                             }
                                                         )
-                                                ) {
-                                                    Text(
-                                                        text = note.sourceTitle,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        fontSize = 12.sp,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis,
-                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                                    )
-                                                }
+                                                        .background(
+                                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                                            RoundedCornerShape(4.dp)
+                                                        )
+                                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                )
                                             }
                                         }
                                     }
@@ -330,8 +338,9 @@ fun CollectionListScreen(
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                            )
+                                containerColor = Color.White.copy(alpha = 0.78f)
+                            ),
+                            border = techPanelBorder()
                         ) {
                             Box(
                                 modifier = Modifier
@@ -355,11 +364,11 @@ fun CollectionListScreen(
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface
+                            containerColor = Color.White.copy(alpha = 0.84f)
                         ),
                         border = BorderStroke(
                             width = 1.dp,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
                         ),
                         onClick = { showCreateDialog = true }
                     ) {

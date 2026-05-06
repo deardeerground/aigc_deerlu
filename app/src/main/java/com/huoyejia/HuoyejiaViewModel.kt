@@ -10,7 +10,9 @@ import com.huoyejia.data.local.NoteEntity
 import com.huoyejia.data.local.NoteRelationEntity
 import com.huoyejia.data.local.ReviewCardEntity
 import com.huoyejia.data.local.UserStatsEntity
+
 import com.huoyejia.service.NotificationScheduler
+import com.huoyejia.service.ReminderTime
 import com.huoyejia.service.DailyReviewAlarm
 import com.huoyejia.domain.CardAssistantState
  import com.huoyejia.domain.ExplainUiState
@@ -126,11 +128,8 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
             // Keep the cards, but move them out of the deleted folder.
             val notesInFolder = notes.value.filter { it.folderId == folderId }
             notesInFolder.forEach { note ->
-                container.relationRepository.deleteForNote(note.noteId)
-                container.reviewCardRepository.deleteForNote(note.noteId)
-                container.noteRepository.deleteNote(note.noteId)
+                container.noteRepository.upsert(note.copy(folderId = null))
             }
-            container.folderRepository.deleteFolder(folderId)
         }
     }
 
@@ -204,7 +203,7 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
             refreshStats()
         }
     }
-    
+
     fun generateReviewCardsForLeastReviewed(count: Int = 3) {
         viewModelScope.launch {
             container.reviewCardGenerator.generateReviewCardsForLeastReviewed(count)
@@ -216,6 +215,7 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
 
     fun deleteNote(noteId: String) {
         viewModelScope.launch {
+            NoteProcessingScheduler.cancel(getApplication(), noteId)
             container.relationRepository.deleteForNote(noteId)
             container.reviewCardRepository.deleteForNote(noteId)
             container.noteRepository.deleteNote(noteId)
@@ -486,34 +486,37 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
         val current = container.noteRepository.loadAllNotes()
         container.statsRepository.upsert(StatsCalculator.calculate(current))
     }
-    
+
+
     // 通知管理方法
     fun enableNotifications() {
         notificationScheduler.enableNotifications()
     }
-    
-    fun testNotification() {
-        viewModelScope.launch {
-            DailyReviewAlarm.testNotification(getApplication())
-        }
-    }
-    
+
     fun disableNotifications() {
         notificationScheduler.disableNotifications()
     }
-    
+
     fun areNotificationsEnabled(): Boolean {
         return notificationScheduler.areNotificationsEnabled()
     }
-    
+
     fun requestExactAlarmPermission(): Intent {
         return notificationScheduler.requestExactAlarmPermission()
     }
-    
+
     fun refreshNotificationState() {
         notificationScheduler.refreshState()
     }
-    
+
+    fun setReminderTime(hour: Int, minute: Int) {
+        notificationScheduler.setReminderTime(hour, minute)
+    }
+
     val notificationsEnabled: StateFlow<Boolean> = notificationScheduler.isEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val reminderTime: StateFlow<ReminderTime> = notificationScheduler.reminderTime
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ReminderTime(21, 13))
+
 }
