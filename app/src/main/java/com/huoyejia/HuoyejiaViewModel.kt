@@ -230,6 +230,18 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun regenerateNote(noteId: String) {
+        viewModelScope.launch {
+            _isBusy.value = true
+            try {
+                container.processor.reprocessNote(noteId)
+                refreshStats()
+            } finally {
+                _isBusy.value = false
+            }
+        }
+    }
+
     fun selectExplainNote(noteId: String) {
         _explainState.value = _explainState.value.copy(
             selectedNoteId = noteId,

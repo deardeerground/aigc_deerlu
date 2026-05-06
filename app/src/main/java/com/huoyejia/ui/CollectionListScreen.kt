@@ -294,20 +294,10 @@ fun CollectionListScreen(
                                         LazyRow(
                                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
-<<<<<<< Updated upstream
-                                            items(folderNotes.take(3), key = { it.noteId }) { note ->
-                                                Text(
-                                                    text = note.sourceTitle,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    fontSize = 12.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-=======
                                             items(folderNotes, key = { it.noteId }) { note ->
                                                 Surface(
                                                     shape = RoundedCornerShape(10.dp),
                                                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
->>>>>>> Stashed changes
                                                     modifier = Modifier
                                                         .combinedClickable(
                                                             onClick = { /* 可以跳转到详情页 */ },
@@ -321,7 +311,15 @@ fun CollectionListScreen(
                                                             RoundedCornerShape(4.dp)
                                                         )
                                                         .padding(horizontal = 8.dp, vertical = 4.dp)
-                                                )
+                                                ) {
+                                                    Text(
+                                                        text = note.sourceTitle,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        fontSize = 12.sp,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
                                             }
                                         }
                                     }

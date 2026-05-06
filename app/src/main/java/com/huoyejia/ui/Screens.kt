@@ -23,9 +23,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -45,12 +44,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -72,10 +75,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
@@ -1070,6 +1070,7 @@ fun NoteDetailScreen(
     onGenerateVideo: (String) -> Unit,
     onAskQuestion: (String, String) -> Unit,
     onUpdateTitle: (String, String) -> Unit,
+    onRegenerate: (String) -> Unit = {},
     fromDuplicateWarning: Boolean = false
 ) {
     if (note == null) {
@@ -1088,7 +1089,7 @@ fun NoteDetailScreen(
     val card = cards.firstOrNull { it.noteId == note.noteId }
     val duplicateCount = relatedRelations.duplicateCountFor(note.noteId)
     val context = LocalContext.current
-    val tags = JsonText.decodeList(note.tags).take(3)
+    val tags = JsonText.decodeList(note.tags)
     var selectedTag by remember(note.noteId) { mutableStateOf<String?>(null) }
     var assistantInput by remember(note.noteId) { mutableStateOf("") }
     var showEditTitleDialog by remember(note.noteId) { mutableStateOf(false) }
@@ -1119,10 +1120,18 @@ fun NoteDetailScreen(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            OutlinedButton(onClick = {
+            IconButton(onClick = {
                 editingTitle = note.sourceTitle
                 showEditTitleDialog = true
-            }) { Text("改标题") }
+            }, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "改标题",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            OutlinedButton(onClick = { onRegenerate(note.noteId) }) { Text("重新生成") }
         }
         SourceMaterialCard(note)
         if (!fromDuplicateWarning && (note.duplicateScore >= 0.45f || duplicateCount > 0)) {
@@ -1222,7 +1231,10 @@ fun NoteDetailScreen(
 @Composable
 private fun SourceMaterialCard(note: NoteEntity) {
     val context = LocalContext.current
-    val originalText = cleanOriginalText(note.rawText ?: note.noteContent.ifBlank { "暂无原文内容" })
+    val originalText = cleanOriginalText(
+        if (note.processedStatus == "PROCESSED") note.noteContent.ifBlank { note.rawText.orEmpty() }
+        else (note.rawText ?: note.noteContent).ifBlank { "暂无原文内容" }
+    )
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -1241,17 +1253,13 @@ private fun SourceMaterialCard(note: NoteEntity) {
                 )
             }
             if (!note.imagePath.isNullOrBlank()) {
-                SourceLine(
-                    label = "原文截图",
-                    value = note.imagePath,
-                    onLongClick = { copyText(context, "截图路径", note.imagePath) }
-                )
-                TinyText("截图文件已保存，后续可接入图片预览和 OCR 高亮。")
+                ImageSection(imagePath = note.imagePath)
             }
             SourceLine(
                 label = "原文",
                 value = originalText,
                 maxLines = 6,
+                canExpand = true,
                 onLongClick = { copyText(context, "原文", originalText) }
             )
         }
@@ -1264,7 +1272,8 @@ private fun SourceLine(
     value: String,
     maxLines: Int = 3,
     canExpand: Boolean = false,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
     val isTextLong = value.lines().size > maxLines || value.length > 50
@@ -1283,7 +1292,14 @@ private fun SourceLine(
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(
-                            if (onClick != null) Modifier.clickable { onClick() } else Modifier
+                            when {
+                                onLongClick != null -> Modifier.combinedClickable(
+                                    onClick = { onClick?.invoke() },
+                                    onLongClick = onLongClick
+                                )
+                                onClick != null -> Modifier.clickable { onClick() }
+                                else -> Modifier
+                            }
                         ),
                     maxLines = if (expanded) Int.MAX_VALUE else maxLines,
                     overflow = TextOverflow.Ellipsis,

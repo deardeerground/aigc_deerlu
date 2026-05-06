@@ -1,11 +1,22 @@
 ﻿package com.huoyejia
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,6 +59,7 @@ class MainActivity : ComponentActivity() {
     private var floatingFolderPickerPending by mutableStateOf<PendingCapture?>(null)
     private var launchFloatingAfterPermission = false
     private var lastBackPressTime = 0L
+    private var openCollectionsRequested by mutableStateOf(false)
 
     private fun requestPermissions() {
         val app = application as HuoyejiaApp
@@ -127,9 +139,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-
-                HuoyejiaScaffold(navController = navController, isBusy = isBusy) {
-                    NavHost(navController = navController, startDestination = "collections") {
 
                 LaunchedEffect(openCollectionsRequested) {
                     if (openCollectionsRequested) {
@@ -282,6 +291,7 @@ class MainActivity : ComponentActivity() {
                                 onGenerateVideo = viewModel::generateCardVideo,
                                 onAskQuestion = viewModel::askCardQuestion,
                                 onUpdateTitle = viewModel::updateNoteTitle,
+                                onRegenerate = viewModel::regenerateNote,
                                 fromDuplicateWarning = fromDuplicateWarning
                             )
                         }

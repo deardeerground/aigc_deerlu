@@ -16,14 +16,13 @@ class MockBlueLMAdapter : BlueLMAdapter {
     override suspend fun enrichNote(noteContent: String, maxSimilarity: Float): NoteAiResult {
         val topic = detectTopic(noteContent)
         val tags = detectTags(noteContent, topic)
-        val summary = noteContent
-            .replace(Regex("\\s+"), " ")
-            .take(72)
-            .let { if (noteContent.length > 72) "$it..." else it }
+        val summary = buildSummary(noteContent)
         val importance = when {
-            noteContent.contains("原因") || noteContent.contains("方法") -> 0.86f
-            noteContent.contains("地图") || noteContent.contains("课堂") -> 0.74f
-            else -> 0.62f
+            noteContent.contains("原因") || noteContent.contains("方法") || noteContent.contains("原理") || noteContent.contains("如何") -> 0.86f
+            noteContent.contains("地图") || noteContent.contains("课堂") || noteContent.contains("总结") -> 0.74f
+            noteContent.length > 500 -> 0.70f
+            noteContent.length > 200 -> 0.65f
+            else -> 0.58f
         }
         return NoteAiResult(
             summary = summary.ifBlank { "这条收藏需要结合上下文复习。" },
@@ -127,19 +126,57 @@ class MockBlueLMAdapter : BlueLMAdapter {
     private fun detectTopic(content: String): String {
         return when {
             content.contains("二战") || content.contains("凡尔赛") || content.contains("欧洲") -> "历史-二战"
-            content.contains("学习") || content.contains("费曼") || content.contains("复习") -> "学习方法"
+            content.contains("学习") || content.contains("费曼") || content.contains("复习") || content.contains("记忆") -> "学习方法"
             content.contains("地图") || content.contains("截图") -> "图像资料"
-            content.contains("函数") || content.contains("公式") -> "理科概念"
+            content.contains("函数") || content.contains("公式") || content.contains("方程") -> "理科概念"
+            content.contains("编程") || content.contains("代码") || content.contains("算法") -> "编程技术"
+            content.contains("设计") || content.contains("UI") || content.contains("UX") -> "设计"
+            content.contains("心理") || content.contains("认知") || content.contains("行为") -> "心理学"
+            content.contains("经济") || content.contains("市场") || content.contains("金融") -> "经济"
+            content.contains("AI") || content.contains("机器") || content.contains("深度") -> "人工智能"
+            content.contains("数据") || content.contains("统计") || content.contains("分析") -> "数据分析"
+            content.contains("网络") || content.contains("安全") || content.contains("协议") -> "网络技术"
+            content.length > 800 -> "综合资料"
+            content.length > 300 -> "知识笔记"
             else -> "待归类"
         }
     }
 
     private fun detectTags(content: String, topic: String): List<String> {
         val tags = linkedSetOf(topic)
-        listOf("二战", "地图", "学习方法", "费曼", "因果", "对比", "PDF", "课堂").forEach {
-            if (content.contains(it)) tags += it
+        val keywordMap = mapOf(
+            "二战" to "二战", "地图" to "地图", "学习" to "学习方法", "费曼" to "费曼",
+            "因果" to "因果", "对比" to "对比", "PDF" to "PDF", "课堂" to "课堂",
+            "函数" to "函数", "公式" to "公式", "实验" to "实验", "历史" to "历史",
+            "编程" to "编程", "设计" to "设计", "心理" to "心理", "经济" to "经济",
+            "物理" to "物理", "数学" to "数学", "生物" to "生物", "化学" to "化学",
+            "AI" to "AI", "算法" to "算法", "数据" to "数据", "网络" to "网络",
+            "安全" to "安全", "架构" to "架构", "性能" to "性能", "测试" to "测试"
+        )
+        keywordMap.forEach { (key, tag) ->
+            if (content.contains(key, ignoreCase = true)) tags += tag
         }
-        return tags.take(5)
+        return tags.take(6)
+    }
+
+    private fun buildSummary(content: String): String {
+        val clean = content
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        if (clean.length <= 100) return clean
+        val sentences = clean.split(Regex("(?<=[。！？\\n])"))
+            .map { it.trim() }
+            .filter { it.length > 5 }
+        if (sentences.isEmpty()) return clean.take(100) + "..."
+        val keySentences = sentences.filter { s ->
+            s.contains("是") || s.contains("有") || s.contains("可以") ||
+            s.contains("需要") || s.contains("通过") || s.contains("因为") ||
+            s.contains("所以") || s.contains("例如") || s.contains("因此")
+        }
+        val selected = keySentences.ifEmpty { sentences }.take(3)
+        return selected.joinToString(" ").take(200).let {
+            if (it.length < clean.length) "$it..." else it
+        }
     }
 
     private fun expandToken(token: String): Sequence<String> {

@@ -250,6 +250,100 @@ class NoteProcessor(
         }
     }
 
+    suspend fun reprocessNote(noteId: String) = withContext(Dispatchers.IO) {
+        val note = noteRepository.getNote(noteId) ?: return@withContext
+        try {
+            updateProgress(noteId, note.sourceTitle, 0.12f, "正在重新生成摘要和标签")
+            noteRepository.updateProcessedStatus(noteId, "PROCESSING")
+            relationRepository.deleteForNote(noteId)
+            reviewCardRepository.deleteForNote(noteId)
+            updateProgress(noteId, note.sourceTitle, 0.22f, "正在读取截图和网页内容")
+            val ocrText = recognizeImageText(note)
+            val webText = fetchWebText(note.url)
+            val content = normalizeContent(note.rawText.orEmpty(), ocrText, webText)
+                .ifBlank { note.sourceTitle }
+            updateProgress(noteId, note.sourceTitle, 0.42f, "正在理解内容")
+            val vector = blueLM.embed(content)
+            val historical = noteRepository.loadWithEmbeddings(noteId)
+                .filter { it.noteId != noteId }
+            val ranked = historical.take(10).map {
+                RelatedNote(it, "similar", 0.5f)
+            }.sortedByDescending { it.confidence }
+
+            val maxSimilarity = ranked.firstOrNull()?.confidence ?: 0f
+            updateProgress(noteId, note.sourceTitle, 0.62f, "正在生成摘要和标签")
+            val ai = blueLM.enrichNote(content, maxSimilarity)
+            if (noteRepository.getNote(noteId) == null) {
+                removeProgress(noteId)
+                return@withContext
+            }
+            val enriched = note.copy(
+                ocrText = ocrText.ifBlank { null },
+                noteContent = content,
+                summary = ai.summary,
+                tags = JsonText.encodeList(sanitizeTags(ai.tags, ai.topic)),
+                topic = ai.topic.takeIf { it.isNotBlank() },
+                importance = ai.importance,
+                duplicateScore = ai.duplicateScore,
+                processedStatus = "PROCESSED"
+            )
+            noteRepository.upsert(enriched)
+            if (noteRepository.getNote(noteId) == null) {
+                removeProgress(noteId)
+                return@withContext
+            }
+            updateProgress(noteId, note.sourceTitle, 0.76f, "正在保存知识索引")
+            noteRepository.saveEmbedding(
+                NoteEmbeddingEntity(
+                    noteId = noteId,
+                    modelName = "mock-bluelm-embedding",
+                    vectorDim = vector.size,
+                    vectorBlob = VectorCodec.encode(vector),
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+
+            updateProgress(noteId, note.sourceTitle, 0.86f, "正在查找关联卡片")
+            val relations = ranked.take(3).mapNotNull { candidate ->
+                if (noteRepository.getNote(noteId) == null || noteRepository.getNote(candidate.note.noteId) == null) {
+                    null
+                } else {
+                    blueLM.classifyRelation(enriched, candidate.note, candidate.confidence)?.let { relation ->
+                        NoteRelationEntity(
+                            relationId = "${noteId}_${candidate.note.noteId}_${relation.relationType}",
+                            noteIdFrom = noteId,
+                            noteIdTo = candidate.note.noteId,
+                            relationType = relation.relationType,
+                            confidence = relation.confidence,
+                            evidence = relation.evidence,
+                            createdAt = System.currentTimeMillis()
+                        )
+                    }
+                }
+            }
+            if (noteRepository.getNote(noteId) == null) {
+                removeProgress(noteId)
+                return@withContext
+            }
+            relationRepository.upsertAll(relations)
+            updateProgress(noteId, note.sourceTitle, 0.94f, "正在生成复习卡")
+            createReviewCard(enriched, relations, ranked)
+            updateProgress(noteId, note.sourceTitle, 1f, "重新生成完成", done = true)
+            backgroundScope.launch {
+                delay(2_500)
+                removeProgress(noteId)
+            }
+        } catch (error: Throwable) {
+            if (noteRepository.getNote(noteId) != null) {
+                noteRepository.updateProcessedStatus(noteId, "FAILED")
+                updateProgress(noteId, note.sourceTitle, 1f, "重新生成失败，稍后会重试", failed = true)
+            } else {
+                removeProgress(noteId)
+            }
+            throw error
+        }
+    }
+
     private suspend fun fetchWebText(url: String?): String = withContext(Dispatchers.IO) {
         val target = url?.trim()?.takeIf { it.startsWith("http://") || it.startsWith("https://") } ?: return@withContext ""
         runCatching {
@@ -287,8 +381,8 @@ class NoteProcessor(
     private fun normalizeContent(raw: String, ocr: String, web: String): String {
         return listOf(
             raw,
-            ocr.takeIf { it.isNotBlank() }?.let { "OCR识别结果：\n$it" }.orEmpty(),
-            web.takeIf { it.isNotBlank() }?.let { "网页正文抓取：\n$it" }.orEmpty()
+            ocr,
+            web
         )
             .filter { it.isNotBlank() }
             .joinToString("\n")

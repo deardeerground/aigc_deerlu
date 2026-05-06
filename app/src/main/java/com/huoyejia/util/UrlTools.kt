@@ -16,6 +16,7 @@ object UrlTools {
             clean.startsWith("http://", ignoreCase = true) -> clean
             clean.startsWith("https://", ignoreCase = true) -> clean
             clean.startsWith("www.", ignoreCase = true) -> "https://$clean"
+            clean.contains(".") && !clean.contains(" ") -> "https://$clean"
             else -> null
         }
     }
