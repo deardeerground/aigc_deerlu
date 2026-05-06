@@ -28,8 +28,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.UUID
 import kotlin.coroutines.resume
 
@@ -43,6 +41,7 @@ class NoteProcessor(
     private val backgroundScope: CoroutineScope
 ) {
     private val activeNoteIds = ConcurrentHashMap.newKeySet<String>()
+    private val webContentExtractor = WebContentExtractor()
     private val _processingProgress = MutableStateFlow<List<NoteProcessingProgress>>(emptyList())
     val processingProgress: StateFlow<List<NoteProcessingProgress>> = _processingProgress.asStateFlow()
 
@@ -95,7 +94,7 @@ class NoteProcessor(
             noteRepository.updateProcessedStatus(noteId, "PROCESSING")
             updateProgress(noteId, note.sourceTitle, 0.22f, "正在读取截图和网页内容")
             val ocrText = recognizeImageText(note)
-            val webText = fetchWebText(note.url)
+            val webText = extractWebText(note.url)
             val content = normalizeContent(note.rawText.orEmpty(), ocrText, webText)
                 .ifBlank { note.sourceTitle }
             updateProgress(noteId, note.sourceTitle, 0.42f, "正在理解内容")
@@ -172,7 +171,7 @@ class NoteProcessor(
         } catch (error: Throwable) {
             if (noteRepository.getNote(noteId) != null) {
                 noteRepository.updateProcessedStatus(noteId, "FAILED")
-                updateProgress(noteId, note.sourceTitle, 1f, "生成失败，稍后会重试", failed = true)
+                updateProgress(noteId, note.sourceTitle, 1f, error.processingFailureMessage("生成失败，稍后会重试"), failed = true)
             } else {
                 removeProgress(noteId)
             }
@@ -259,7 +258,7 @@ class NoteProcessor(
             reviewCardRepository.deleteForNote(noteId)
             updateProgress(noteId, note.sourceTitle, 0.22f, "正在读取截图和网页内容")
             val ocrText = recognizeImageText(note)
-            val webText = fetchWebText(note.url)
+            val webText = extractWebText(note.url)
             val content = normalizeContent(note.rawText.orEmpty(), ocrText, webText)
                 .ifBlank { note.sourceTitle }
             updateProgress(noteId, note.sourceTitle, 0.42f, "正在理解内容")
@@ -336,7 +335,7 @@ class NoteProcessor(
         } catch (error: Throwable) {
             if (noteRepository.getNote(noteId) != null) {
                 noteRepository.updateProcessedStatus(noteId, "FAILED")
-                updateProgress(noteId, note.sourceTitle, 1f, "重新生成失败，稍后会重试", failed = true)
+                updateProgress(noteId, note.sourceTitle, 1f, error.processingFailureMessage("重新生成失败，稍后会重试"), failed = true)
             } else {
                 removeProgress(noteId)
             }
@@ -344,38 +343,9 @@ class NoteProcessor(
         }
     }
 
-    private suspend fun fetchWebText(url: String?): String = withContext(Dispatchers.IO) {
-        val target = url?.trim()?.takeIf { it.startsWith("http://") || it.startsWith("https://") } ?: return@withContext ""
-        runCatching {
-            val connection = (URL(target).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 10000
-                readTimeout = 12000
-                instanceFollowRedirects = true
-                requestMethod = "GET"
-                setRequestProperty(
-                    "User-Agent",
-                    "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36"
-                )
-                setRequestProperty("Accept", "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8")
-            }
-            connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                .htmlToReadableText()
-                .take(10000)
-        }.getOrDefault("")
-    }
-
-    private fun String.htmlToReadableText(): String {
-        return replace(Regex("(?is)<script.*?</script>"), " ")
-            .replace(Regex("(?is)<style.*?</style>"), " ")
-            .replace(Regex("(?is)<[^>]+>"), " ")
-            .replace("&nbsp;", " ")
-            .replace("&amp;", "&")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&quot;", "\"")
-            .replace("&#39;", "'")
-            .replace(Regex("\\s{2,}"), " ")
-            .trim()
+    private suspend fun extractWebText(url: String?): String {
+        val target = url?.takeIf { it.isNotBlank() } ?: return ""
+        return webContentExtractor.extract(target).toAiText()
     }
 
     private fun normalizeContent(raw: String, ocr: String, web: String): String {
@@ -424,6 +394,13 @@ class NoteProcessor(
 
     private fun removeProgress(noteId: String) {
         _processingProgress.value = _processingProgress.value.filterNot { it.noteId == noteId }
+    }
+
+    private fun Throwable.processingFailureMessage(defaultMessage: String): String {
+        val message = generateSequence(this) { it.cause }
+            .mapNotNull { it.message }
+            .firstOrNull { it.contains("远程 AI 摘要失败了") }
+        return message ?: defaultMessage
     }
 }
 

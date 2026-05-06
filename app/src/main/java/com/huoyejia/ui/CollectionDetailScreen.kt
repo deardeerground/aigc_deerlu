@@ -127,8 +127,10 @@ fun CollectionDetailScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = {
-                        navController.navigate("collections") {
-                            popUpTo("collections") { inclusive = true }
+                        if (!navController.popBackStack()) {
+                            navController.navigate("collections") {
+                                launchSingleTop = true
+                            }
                         }
                     }) {
                         Icon(

@@ -37,35 +37,47 @@ class RemoteBlueLMAdapter(
         get() = config.isComplete
 
     override suspend fun enrichNote(noteContent: String, maxSimilarity: Float): NoteAiResult {
-        return runRemoteOrFallback(
-            ready = config.chatReady,
-            remoteCall = {
-                val response = chatJson(
-                    system = "你是学习收藏助手。只返回 JSON，不要 markdown。",
-                    user = """
-                        基于以下 note_content 生成结构化结果。
-                        返回 JSON:
-                        {
-                          "summary":"<=80字",
-                          "tags":["最多5个"],
-                          "topic":"主题",
-                          "importance":0-1,
-                          "duplicate_score":0-1
-                        }
-                        max_similarity=$maxSimilarity
-                        note_content=$noteContent
-                    """.trimIndent()
-                )
-                NoteAiResult(
-                    summary = response.optString("summary").ifBlank { noteContent.take(60) },
-                    tags = response.optJSONArray("tags").toStringList().ifEmpty { listOf("待归类") },
-                    topic = response.optString("topic").ifBlank { "待归类" },
-                    importance = response.optDouble("importance", 0.7).toFloat().coerceIn(0f, 1f),
-                    duplicateScore = response.optDouble("duplicate_score", maxSimilarity.toDouble()).toFloat().coerceIn(0f, 1f)
-                )
-            },
-            fallbackCall = { fallback.enrichNote(noteContent, maxSimilarity) }
-        )
+        if (!config.chatReady) {
+            throw IllegalStateException("远程 AI 摘要失败了：聊天模型未配置。")
+        }
+        return runCatching {
+            val response = chatJson(
+                system = """
+                    你是学习收藏助手。必须只返回一个合法 JSON 对象，不要 markdown，不要解释文字。
+                    摘要必须进行归纳提炼，禁止直接复制原文或只截取原文开头。
+                """.trimIndent(),
+                user = """
+                    基于以下 note_content 生成结构化结果。
+                    JSON schema:
+                    {
+                      "summary":"用中文归纳核心观点，40到80字，不要照抄原文",
+                      "tags":["最多5个中文短标签"],
+                      "topic":"一个中文主题",
+                      "importance":0-1,
+                      "duplicate_score":0-1
+                    }
+                    max_similarity=$maxSimilarity
+                    note_content=$noteContent
+                """.trimIndent(),
+                forceJsonObject = true
+            )
+            val summary = response.optString("summary").trim()
+            if (summary.isBlank()) {
+                throw IllegalStateException("模型返回 JSON 中缺少 summary。")
+            }
+            NoteAiResult(
+                summary = summary,
+                tags = response.optJSONArray("tags").toStringList().ifEmpty { listOf("待归类") },
+                topic = response.optString("topic").ifBlank { "待归类" },
+                importance = response.optDouble("importance", 0.7).toFloat().coerceIn(0f, 1f),
+                duplicateScore = response.optDouble("duplicate_score", maxSimilarity.toDouble()).toFloat().coerceIn(0f, 1f)
+            )
+        }.getOrElse { error ->
+            throw IllegalStateException(
+                "远程 AI 摘要失败了：${error.message ?: error::class.java.simpleName}",
+                error
+            )
+        }
     }
 
     override suspend fun embed(text: String): FloatArray {
@@ -324,7 +336,11 @@ class RemoteBlueLMAdapter(
         }.getOrElse { fallback.generateAnimationHtml(pack) }
     }
 
-    private suspend fun chatJson(system: String, user: String): JSONObject {
+    private suspend fun chatJson(
+        system: String,
+        user: String,
+        forceJsonObject: Boolean = false
+    ): JSONObject {
         return withContext(Dispatchers.IO) {
             val messages = JSONArray()
                 .put(JSONObject().put("role", "system").put("content", system))
@@ -333,6 +349,9 @@ class RemoteBlueLMAdapter(
                 .put("model", config.chat.model)
                 .put("temperature", 0.2)
                 .put("messages", messages)
+            if (forceJsonObject) {
+                payload.put("response_format", JSONObject().put("type", "json_object"))
+            }
             val response = postJson(config.chat, "/chat/completions", payload)
             val content = response
                 .getJSONArray("choices")

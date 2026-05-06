@@ -1,7 +1,7 @@
 package com.huoyejia.util
 
 object UrlTools {
-    private val urlRegex = Regex("""(?i)\b((?:https?://|www\.)[^\s<>"'，。；、）)]+)""")
+    private val urlRegex = Regex("""(?i)\b((?:https?://|www\.)[^\s<>"'，。；、）)\]】>》」』]+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:/[^\s<>"'，。；、）)\]】>》」』]*)?)""")
 
     fun extractFirstUrl(text: String): String? {
         val raw = urlRegex.find(text)?.groupValues?.getOrNull(1)?.trim() ?: return null
@@ -10,7 +10,8 @@ object UrlTools {
 
     fun normalizeUrl(value: String): String? {
         val clean = value.trim()
-            .trimEnd('.', ',', ';', '。', '，', '；', '、', ')', '）')
+            .trimStart('(', '（', '[', '【', '<', '《', '「', '『')
+            .trimEnd('.', ',', ';', '。', '，', '；', '、', ')', '）', ']', '】', '>', '》', '」', '』')
         if (clean.isBlank()) return null
         return when {
             clean.startsWith("http://", ignoreCase = true) -> clean

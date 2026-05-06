@@ -198,9 +198,8 @@ fun CaptureScreen(
     var url by remember { mutableStateOf("") }
     var screenshotUri by remember { mutableStateOf<String?>(null) }
     var showFolderPicker by remember { mutableStateOf(false) }
-    var saveRequested by remember { mutableStateOf(false) }
-    var saveSawBusy by remember { mutableStateOf(false) }
     var showSavedNotice by remember { mutableStateOf(false) }
+    var savedNoticeToken by remember { mutableStateOf(0) }
     val screenshotPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
@@ -222,38 +221,11 @@ fun CaptureScreen(
         }
     }
 
-    LaunchedEffect(isBusy, saveRequested, saveSawBusy) {
-        if (saveRequested && isBusy) {
-            saveSawBusy = true
-        }
-        if (saveRequested && saveSawBusy && !isBusy) {
+    LaunchedEffect(savedNoticeToken) {
+        if (savedNoticeToken > 0) {
             showSavedNotice = true
-            saveRequested = false
-            saveSawBusy = false
-            delay(1000)
+            delay(1_500)
             showSavedNotice = false
-        }
-        if (saveRequested && isBusy) {
-            delay(3000)
-            showSavedNotice = false
-            saveRequested = false
-            saveSawBusy = false
-        }
-    }
-    LaunchedEffect(saveRequested) {
-        if (saveRequested && !isBusy && !saveSawBusy) {
-            delay(500)
-            if (saveRequested && !isBusy && !saveSawBusy) {
-                showSavedNotice = true
-                saveRequested = false
-                delay(1000)
-                showSavedNotice = false
-            }
-        }
-        if (saveRequested && !saveSawBusy) {
-            delay(3000)
-            showSavedNotice = false
-            saveRequested = false
         }
     }
 
@@ -273,7 +245,7 @@ fun CaptureScreen(
             screenshotUri,
             folderEntity.folderId
         )
-        saveRequested = true
+        savedNoticeToken += 1
         showFolderPicker = false
         onPendingCaptureConsumed()
         onSaveComplete()
@@ -1109,7 +1081,13 @@ fun NoteDetailScreen(
             .padding(horizontal = 18.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        OutlinedButton(onClick = onBack) { Text("返回") }
+        OutlinedButton(
+            onClick = onBack,
+            modifier = Modifier.size(44.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+        ) {
+            Text("<", fontSize = 22.sp, fontWeight = FontWeight.Black)
+        }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
                 note.sourceTitle,
@@ -1637,18 +1615,18 @@ private fun suggestedQuestions(
     relatedNotes: List<NoteEntity>,
     reviewCard: ReviewCardEntity?
 ): List<String> {
-    val noteId = note.noteId
-    return listOfNotNull(
-        reviewCard?.question?.takeIf { it.isNotBlank() }?.take(50),
-        note.summary?.let { summary ->
-            if (summary.length > 10) "总结：${summary.take(25)}" else null
-        },
-        note.sourceTitle?.let { title ->
-            if (title.isNotBlank()) "「${title.take(15)}」的三点？" else null
-        },
-        if (note.tags.isNotBlank()) "这些知识点有何联系？" else null
-    ).distinct().take(4).ifEmpty {
-        listOf("重点是什么？", "如何记住？")
+    return buildList {
+        add("仅根据当前卡片总结三点")
+        add("当前卡片最该记住什么？")
+        note.summary?.takeIf { it.length > 10 }?.let { summary ->
+            add("这段摘要的核心是什么：${summary.take(18)}")
+        }
+        note.sourceTitle.takeIf { it.isNotBlank() }?.let { title ->
+            add("「${title.take(15)}」怎么复述？")
+        }
+        if (note.tags.isNotBlank()) add("当前卡片的标签为什么合适？")
+    }.distinct().take(4).ifEmpty {
+        listOf("仅根据当前卡片总结三点", "当前卡片最该记住什么？")
     }
 }
 

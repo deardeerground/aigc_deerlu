@@ -127,7 +127,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     activity.onBackPressedDispatcher.addCallback(activity, callback)
-                    onDispose { }
+                    onDispose { callback.remove() }
                 }
 
                 LaunchedEffect(shouldOpenCapture) {
@@ -276,8 +276,10 @@ class MainActivity : ComponentActivity() {
                                 explainState = explainState,
                                 assistantState = cardAssistantState,
                                 onBack = {
-                                    navController.navigate("collections") {
-                                        popUpTo("collections") { inclusive = true }
+                                    if (!navController.popBackStack()) {
+                                        navController.navigate("collections") {
+                                            launchSingleTop = true
+                                        }
                                     }
                                 },
                                 onOpenNote = { param ->
@@ -373,6 +375,7 @@ class MainActivity : ComponentActivity() {
         if (!getBooleanExtra(EXTRA_OPEN_CAPTURE, false) && sharedText.isBlank()) return null
         val explicitText = getStringExtra(EXTRA_CAPTURE_TEXT).orEmpty()
         val explicitUrl = getStringExtra(EXTRA_CAPTURE_URL).orEmpty()
+        val sharedTitle = getStringExtra(Intent.EXTRA_SUBJECT).orEmpty()
         val sharedUrl = UrlTools.extractFirstUrl(sharedText).orEmpty()
         val text = explicitText.ifBlank {
             if (sharedUrl.isNotBlank() && sharedText == sharedUrl) "" else sharedText
@@ -381,7 +384,9 @@ class MainActivity : ComponentActivity() {
         if (text.isBlank() && url.isBlank()) return null
         return PendingCapture(
             requestId = System.currentTimeMillis(),
-            title = getStringExtra(EXTRA_CAPTURE_TITLE).orEmpty().ifBlank { "鍒嗕韩閲囬泦" },
+            title = getStringExtra(EXTRA_CAPTURE_TITLE).orEmpty()
+                .ifBlank { sharedTitle }
+                .ifBlank { "分享采集" },
             text = text,
             url = url,
             showFolderPicker = getBooleanExtra(EXTRA_PICK_FOLDER, true)

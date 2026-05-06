@@ -18,6 +18,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import com.huoyejia.util.UrlTools
 
 class FloatingCaptureService : Service() {
     private lateinit var windowManager: WindowManager
@@ -173,10 +174,7 @@ class FloatingCaptureService : Service() {
     }
 
     private fun extractFirstUrl(text: String): String? {
-        return Regex("""https?://\S+""")
-            .find(text)
-            ?.value
-            ?.trimEnd('.', ',', ';', '\u3002', '\uff0c', '\uff1b')
+        return UrlTools.extractFirstUrl(text)
     }
 
     private fun overlayParams(width: Int, height: Int): WindowManager.LayoutParams {
