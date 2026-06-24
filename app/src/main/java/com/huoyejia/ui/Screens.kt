@@ -91,6 +91,7 @@ import com.huoyejia.data.local.NoteRelationEntity
 import com.huoyejia.data.local.ReviewCardEntity
 import com.huoyejia.data.local.UserStatsEntity
 import com.huoyejia.data.local.FolderEntity
+import com.huoyejia.domain.AssistantMessage
 import com.huoyejia.domain.CardAssistantState
 import com.huoyejia.domain.ExplainUiState
 import com.huoyejia.domain.ExplainPack
@@ -383,16 +384,41 @@ private fun ProcessingProgressCard(progressItems: List<NoteProcessingProgress>) 
                 progress = { averageProgress.coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth()
             )
-            Text(
-                "${primary.title}：${primary.message}",
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                lineHeight = 20.sp
-            )
+            Text("${primary.title}：${primary.stage.ifBlank { primary.message }}", fontWeight = FontWeight.Bold)
+            Text(primary.message, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 20.sp)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                primary.steps.forEach { step ->
+                    ProcessingStepRow(step.title, step.status, step.progress)
+                }
+            }
             val activeText = if (activeItems.size > 1) "还有 ${activeItems.size} 个任务在生成。" else "离开采集页也会继续生成。"
             val failedText = if (failedItems.isNotEmpty()) " ${failedItems.size} 个任务暂未完成，稍后会重试。" else ""
             TinyText(activeText + failedText)
         }
+    }
+}
+
+@Composable
+private fun ProcessingStepRow(title: String, status: String, progress: Float) {
+    val accent = when (status) {
+        "完成" -> MaterialTheme.colorScheme.primary
+        "进行中" -> MaterialTheme.colorScheme.secondary
+        "失败" -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.outline
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Surface(
+            modifier = Modifier.size(10.dp),
+            shape = CircleShape,
+            color = accent
+        ) {}
+        Text(title, modifier = Modifier.width(72.dp), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        LinearProgressIndicator(
+            progress = { progress.coerceIn(0f, 1f) },
+            modifier = Modifier.weight(1f),
+            color = accent
+        )
+        Text(status, fontSize = 12.sp, color = accent, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -1153,7 +1179,7 @@ fun NoteDetailScreen(
             relatedNotes = relatedNotes.map { it.second },
             reviewCard = card,
             input = assistantInput,
-            answer = assistantForThis.answer,
+            messages = assistantForThis.messages,
             isAsking = assistantForThis.isAsking,
             errorMessage = assistantForThis.errorMessage,
             onInputChange = { assistantInput = it },
@@ -1517,7 +1543,7 @@ private fun AiAssistantCard(
     relatedNotes: List<NoteEntity>,
     reviewCard: ReviewCardEntity?,
     input: String,
-    answer: String,
+    messages: List<AssistantMessage>,
     isAsking: Boolean,
     errorMessage: String?,
     onInputChange: (String) -> Unit,
@@ -1531,6 +1557,7 @@ private fun AiAssistantCard(
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("AI 小助手", fontSize = 22.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSecondaryContainer)
+            TinyText("围绕当前卡片连续追问，AI 会结合这张卡片和已建立的关联卡片回答。")
             Text("你可能想问的问题", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 questions.forEach { question ->
@@ -1555,7 +1582,7 @@ private fun AiAssistantCard(
                 enabled = input.isNotBlank() && !isAsking
             ) { Text(if (isAsking) "AI 正在思考..." else "提问") }
             if (isAsking) {
-                TinyText("仅根据当前卡片内容回答，避免混入其他卡片。")
+                TinyText("AI 正在读取当前卡片、关联卡片和本轮聊天上下文。")
             }
             errorMessage?.let {
                 Surface(
@@ -1571,18 +1598,61 @@ private fun AiAssistantCard(
                     )
                 }
             }
-            if (answer.isNotBlank()) {
-                SelectionContainer {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        color = MaterialTheme.colorScheme.surface
-                    ) {
-                        MarkdownText(answer, modifier = Modifier.padding(14.dp))
+            if (messages.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    messages.forEach { message ->
+                        AssistantBubble(message)
                     }
+                }
+            } else {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+                ) {
+                    Text(
+                        "还没有对话。可以从上面的建议问题开始，或者直接问“这张卡怎么背”。",
+                        modifier = Modifier.padding(14.dp),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+                        lineHeight = 20.sp
+                    )
                 }
             }
 }
+    }
+}
+
+@Composable
+private fun AssistantBubble(message: AssistantMessage) {
+    val isUser = message.role == "user"
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(if (isUser) 0.86f else 0.94f),
+            shape = RoundedCornerShape(
+                topStart = 18.dp,
+                topEnd = 18.dp,
+                bottomStart = if (isUser) 18.dp else 4.dp,
+                bottomEnd = if (isUser) 4.dp else 18.dp
+            ),
+            color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+            border = if (isUser) null else BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f))
+        ) {
+            SelectionContainer {
+                if (isUser) {
+                    Text(
+                        message.content,
+                        modifier = Modifier.padding(13.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        lineHeight = 20.sp
+                    )
+                } else {
+                    MarkdownText(message.content, modifier = Modifier.padding(13.dp))
+                }
+            }
+        }
     }
 }
 

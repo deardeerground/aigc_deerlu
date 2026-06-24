@@ -50,14 +50,22 @@ android {
         buildConfigField("String", "LLM_CHAT_API_KEY", "\"${readConfig("LLM_CHAT_API_KEY", "LLM_API_KEY").gradleEscaped()}\"")
         buildConfigField("String", "LLM_EMBEDDING_BASE_URL", "\"${readConfig("LLM_EMBEDDING_BASE_URL", "LLM_BASE_URL").gradleEscaped()}\"")
         buildConfigField("String", "LLM_EMBEDDING_API_KEY", "\"${readConfig("LLM_EMBEDDING_API_KEY", "LLM_API_KEY").gradleEscaped()}\"")
+        buildConfigField("String", "LLM_EMBEDDING_PATH", "\"${readConfig("LLM_EMBEDDING_PATH").ifBlank { "/embeddings" }.gradleEscaped()}\"")
         buildConfigField("String", "LLM_IMAGE_BASE_URL", "\"${readConfig("LLM_IMAGE_BASE_URL", "LLM_BASE_URL").gradleEscaped()}\"")
         buildConfigField("String", "LLM_IMAGE_API_KEY", "\"${readConfig("LLM_IMAGE_API_KEY", "LLM_API_KEY").gradleEscaped()}\"")
         buildConfigField("String", "LLM_IMAGE_MODEL", "\"${readConfig("LLM_IMAGE_MODEL").ifBlank { "gpt-image-1" }.gradleEscaped()}\"")
+        buildConfigField("String", "LLM_IMAGE_PATH", "\"${readConfig("LLM_IMAGE_PATH").ifBlank { "/images/generations" }.gradleEscaped()}\"")
+        buildConfigField("String", "LLM_IMAGE_SIZE", "\"${readConfig("LLM_IMAGE_SIZE").ifBlank { "1024x1024" }.gradleEscaped()}\"")
+        buildConfigField("Boolean", "LLM_IMAGE_WATERMARK", readConfig("LLM_IMAGE_WATERMARK").ifBlank { "false" })
         buildConfigField("String", "VIDEO_BASE_URL", "\"${readConfig("VIDEO_BASE_URL").ifBlank { "https://ark.cn-beijing.volces.com" }.gradleEscaped()}\"")
         buildConfigField("String", "VIDEO_API_KEY", "\"${readConfig("VIDEO_API_KEY", "ARK_API_KEY").gradleEscaped()}\"")
-        buildConfigField("String", "VIDEO_MODEL", "\"${readConfig("VIDEO_MODEL").ifBlank { "ep-20260429125645-qrwkd" }.gradleEscaped()}\"")
+        buildConfigField("String", "VIDEO_MODEL", "\"${readConfig("VIDEO_MODEL").ifBlank { "doubao-seedance-2-0-260128" }.gradleEscaped()}\"")
         buildConfigField("String", "VIDEO_CREATE_PATH", "\"${readConfig("VIDEO_CREATE_PATH").ifBlank { "/api/v3/contents/generations/tasks" }.gradleEscaped()}\"")
         buildConfigField("String", "VIDEO_STATUS_PATH", "\"${readConfig("VIDEO_STATUS_PATH").ifBlank { "/api/v3/contents/generations/tasks/{id}" }.gradleEscaped()}\"")
+        buildConfigField("Boolean", "VIDEO_GENERATE_AUDIO", readConfig("VIDEO_GENERATE_AUDIO").ifBlank { "true" })
+        buildConfigField("String", "VIDEO_RATIO", "\"${readConfig("VIDEO_RATIO").ifBlank { "16:9" }.gradleEscaped()}\"")
+        buildConfigField("Integer", "VIDEO_DURATION", readConfig("VIDEO_DURATION").ifBlank { "11" })
+        buildConfigField("Boolean", "VIDEO_WATERMARK", readConfig("VIDEO_WATERMARK").ifBlank { "false" })
     }
 
     buildFeatures {

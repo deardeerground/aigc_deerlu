@@ -25,6 +25,8 @@ class FolderRepository(private val dao: FolderDao) {
 
     suspend fun deleteFolder(folderId: String) = dao.deleteFolder(folderId)
 
+    suspend fun renameFolder(folderId: String, name: String) = dao.renameFolder(folderId, name)
+
     suspend fun countNotesInFolder(folderId: String): Int = dao.countNotesInFolder(folderId)
 }
 
@@ -45,6 +47,8 @@ class NoteRepository(
     suspend fun markReviewed(noteId: String) = noteDao.markReviewed(noteId)
 
     suspend fun updateTitle(noteId: String, title: String) = noteDao.updateTitle(noteId, title)
+
+    suspend fun moveToFolder(noteId: String, folderId: String?) = noteDao.moveToFolder(noteId, folderId)
 
     suspend fun updateProcessedStatus(noteId: String, status: String) = noteDao.updateProcessedStatus(noteId, status)
 

@@ -76,7 +76,7 @@ class NoteProcessor(
             folderId = folderId
         )
         noteRepository.upsert(note)
-        updateProgress(noteId, note.sourceTitle, 0.05f, "已保存，等待整理")
+        updateProgress(noteId, note.sourceTitle, ProcessingStage.QUEUED, 0.05f, "已保存，等待整理")
         NoteProcessingScheduler.schedule(context, noteId)
         startProcessing(noteId)
         noteId
@@ -90,14 +90,14 @@ class NoteProcessor(
             return@withContext
         }
         try {
-            updateProgress(noteId, note.sourceTitle, 0.12f, "开始生成摘要和标签")
+            updateProgress(noteId, note.sourceTitle, ProcessingStage.READ_SOURCE, 0.12f, "准备读取素材")
             noteRepository.updateProcessedStatus(noteId, "PROCESSING")
-            updateProgress(noteId, note.sourceTitle, 0.22f, "正在读取截图和网页内容")
+            updateProgress(noteId, note.sourceTitle, ProcessingStage.READ_SOURCE, 0.22f, "正在读取截图和网页内容")
             val ocrText = recognizeImageText(note)
             val webText = extractWebText(note.url)
             val content = normalizeContent(note.rawText.orEmpty(), ocrText, webText)
                 .ifBlank { note.sourceTitle }
-            updateProgress(noteId, note.sourceTitle, 0.42f, "正在理解内容")
+            updateProgress(noteId, note.sourceTitle, ProcessingStage.UNDERSTAND, 0.42f, "正在理解内容")
             val vector = blueLM.embed(content)
             val historical = noteRepository.loadWithEmbeddings(noteId)
                 .filter { it.noteId != noteId }
@@ -106,7 +106,7 @@ class NoteProcessor(
             }.sortedByDescending { it.confidence }
 
             val maxSimilarity = ranked.firstOrNull()?.confidence ?: 0f
-            updateProgress(noteId, note.sourceTitle, 0.62f, "正在生成摘要和标签")
+            updateProgress(noteId, note.sourceTitle, ProcessingStage.UNDERSTAND, 0.62f, "正在生成摘要和标签")
             val ai = blueLM.enrichNote(content, maxSimilarity)
             if (noteRepository.getNote(noteId) == null) {
                 removeProgress(noteId)
@@ -127,7 +127,7 @@ class NoteProcessor(
                 removeProgress(noteId)
                 return@withContext
             }
-            updateProgress(noteId, note.sourceTitle, 0.76f, "正在保存知识索引")
+            updateProgress(noteId, note.sourceTitle, ProcessingStage.LINK, 0.76f, "正在保存知识索引")
             noteRepository.saveEmbedding(
                 NoteEmbeddingEntity(
                     noteId = noteId,
@@ -138,7 +138,7 @@ class NoteProcessor(
                 )
             )
 
-            updateProgress(noteId, note.sourceTitle, 0.86f, "正在查找关联卡片")
+            updateProgress(noteId, note.sourceTitle, ProcessingStage.LINK, 0.86f, "正在查找关联卡片")
             val relations = ranked.take(3).mapNotNull { candidate ->
                 if (noteRepository.getNote(noteId) == null || noteRepository.getNote(candidate.note.noteId) == null) {
                     null
@@ -161,9 +161,9 @@ class NoteProcessor(
                 return@withContext
             }
             relationRepository.upsertAll(relations)
-            updateProgress(noteId, note.sourceTitle, 0.94f, "正在生成复习卡")
+            updateProgress(noteId, note.sourceTitle, ProcessingStage.GENERATE_CARD, 0.94f, "正在生成复习卡")
             createReviewCard(enriched, relations, ranked)
-            updateProgress(noteId, note.sourceTitle, 1f, "整理完成", done = true)
+            updateProgress(noteId, note.sourceTitle, ProcessingStage.DONE, 1f, "整理完成", done = true)
             backgroundScope.launch {
                 delay(2_500)
                 removeProgress(noteId)
@@ -171,7 +171,7 @@ class NoteProcessor(
         } catch (error: Throwable) {
             if (noteRepository.getNote(noteId) != null) {
                 noteRepository.updateProcessedStatus(noteId, "FAILED")
-                updateProgress(noteId, note.sourceTitle, 1f, error.processingFailureMessage("生成失败，稍后会重试"), failed = true)
+                updateProgress(noteId, note.sourceTitle, ProcessingStage.FAILED, 1f, error.processingFailureMessage("生成失败，稍后会重试"), failed = true)
             } else {
                 removeProgress(noteId)
             }
@@ -183,7 +183,7 @@ class NoteProcessor(
 
     suspend fun schedulePendingNotes() = withContext(Dispatchers.IO) {
         noteRepository.loadPendingProcessing().forEach { note ->
-            updateProgress(note.noteId, note.sourceTitle, 0.05f, "等待继续整理")
+            updateProgress(note.noteId, note.sourceTitle, ProcessingStage.QUEUED, 0.05f, "等待继续整理")
             NoteProcessingScheduler.schedule(context, note.noteId)
             startProcessing(note.noteId)
         }
@@ -252,16 +252,16 @@ class NoteProcessor(
     suspend fun reprocessNote(noteId: String) = withContext(Dispatchers.IO) {
         val note = noteRepository.getNote(noteId) ?: return@withContext
         try {
-            updateProgress(noteId, note.sourceTitle, 0.12f, "正在重新生成摘要和标签")
+            updateProgress(noteId, note.sourceTitle, ProcessingStage.READ_SOURCE, 0.12f, "准备重新读取素材")
             noteRepository.updateProcessedStatus(noteId, "PROCESSING")
             relationRepository.deleteForNote(noteId)
             reviewCardRepository.deleteForNote(noteId)
-            updateProgress(noteId, note.sourceTitle, 0.22f, "正在读取截图和网页内容")
+            updateProgress(noteId, note.sourceTitle, ProcessingStage.READ_SOURCE, 0.22f, "正在读取截图和网页内容")
             val ocrText = recognizeImageText(note)
             val webText = extractWebText(note.url)
             val content = normalizeContent(note.rawText.orEmpty(), ocrText, webText)
                 .ifBlank { note.sourceTitle }
-            updateProgress(noteId, note.sourceTitle, 0.42f, "正在理解内容")
+            updateProgress(noteId, note.sourceTitle, ProcessingStage.UNDERSTAND, 0.42f, "正在理解内容")
             val vector = blueLM.embed(content)
             val historical = noteRepository.loadWithEmbeddings(noteId)
                 .filter { it.noteId != noteId }
@@ -270,7 +270,7 @@ class NoteProcessor(
             }.sortedByDescending { it.confidence }
 
             val maxSimilarity = ranked.firstOrNull()?.confidence ?: 0f
-            updateProgress(noteId, note.sourceTitle, 0.62f, "正在生成摘要和标签")
+            updateProgress(noteId, note.sourceTitle, ProcessingStage.UNDERSTAND, 0.62f, "正在生成摘要和标签")
             val ai = blueLM.enrichNote(content, maxSimilarity)
             if (noteRepository.getNote(noteId) == null) {
                 removeProgress(noteId)
@@ -291,7 +291,7 @@ class NoteProcessor(
                 removeProgress(noteId)
                 return@withContext
             }
-            updateProgress(noteId, note.sourceTitle, 0.76f, "正在保存知识索引")
+            updateProgress(noteId, note.sourceTitle, ProcessingStage.LINK, 0.76f, "正在保存知识索引")
             noteRepository.saveEmbedding(
                 NoteEmbeddingEntity(
                     noteId = noteId,
@@ -302,7 +302,7 @@ class NoteProcessor(
                 )
             )
 
-            updateProgress(noteId, note.sourceTitle, 0.86f, "正在查找关联卡片")
+            updateProgress(noteId, note.sourceTitle, ProcessingStage.LINK, 0.86f, "正在查找关联卡片")
             val relations = ranked.take(3).mapNotNull { candidate ->
                 if (noteRepository.getNote(noteId) == null || noteRepository.getNote(candidate.note.noteId) == null) {
                     null
@@ -325,9 +325,9 @@ class NoteProcessor(
                 return@withContext
             }
             relationRepository.upsertAll(relations)
-            updateProgress(noteId, note.sourceTitle, 0.94f, "正在生成复习卡")
+            updateProgress(noteId, note.sourceTitle, ProcessingStage.GENERATE_CARD, 0.94f, "正在生成复习卡")
             createReviewCard(enriched, relations, ranked)
-            updateProgress(noteId, note.sourceTitle, 1f, "重新生成完成", done = true)
+            updateProgress(noteId, note.sourceTitle, ProcessingStage.DONE, 1f, "重新生成完成", done = true)
             backgroundScope.launch {
                 delay(2_500)
                 removeProgress(noteId)
@@ -335,7 +335,7 @@ class NoteProcessor(
         } catch (error: Throwable) {
             if (noteRepository.getNote(noteId) != null) {
                 noteRepository.updateProcessedStatus(noteId, "FAILED")
-                updateProgress(noteId, note.sourceTitle, 1f, error.processingFailureMessage("重新生成失败，稍后会重试"), failed = true)
+                updateProgress(noteId, note.sourceTitle, ProcessingStage.FAILED, 1f, error.processingFailureMessage("重新生成失败，稍后会重试"), failed = true)
             } else {
                 removeProgress(noteId)
             }
@@ -375,16 +375,20 @@ class NoteProcessor(
     private fun updateProgress(
         noteId: String,
         title: String,
+        stage: ProcessingStage,
         progress: Float,
         message: String,
         done: Boolean = false,
         failed: Boolean = false
     ) {
+        val previous = _processingProgress.value.firstOrNull { it.noteId == noteId }
         val item = NoteProcessingProgress(
             noteId = noteId,
             title = title,
+            stage = stage.title,
             progress = progress.coerceIn(0f, 1f),
             message = message,
+            steps = buildProgressSteps(stage, failed, previous?.steps.orEmpty()),
             done = done,
             failed = failed
         )
@@ -404,11 +408,66 @@ class NoteProcessor(
     }
 }
 
+private enum class ProcessingStage(val title: String) {
+    QUEUED("排队"),
+    READ_SOURCE("读取素材"),
+    UNDERSTAND("理解"),
+    LINK("关联"),
+    GENERATE_CARD("生成卡片"),
+    DONE("完成"),
+    FAILED("失败")
+}
+
+data class ProcessingStepProgress(
+    val title: String,
+    val status: String,
+    val progress: Float
+)
+
 data class NoteProcessingProgress(
     val noteId: String,
     val title: String,
+    val stage: String = "",
     val progress: Float,
     val message: String,
+    val steps: List<ProcessingStepProgress> = emptyList(),
     val done: Boolean = false,
     val failed: Boolean = false
 )
+
+private fun buildProgressSteps(
+    stage: ProcessingStage,
+    failed: Boolean,
+    previous: List<ProcessingStepProgress>
+): List<ProcessingStepProgress> {
+    val stages = listOf(
+        ProcessingStage.READ_SOURCE,
+        ProcessingStage.UNDERSTAND,
+        ProcessingStage.LINK,
+        ProcessingStage.GENERATE_CARD
+    )
+    if (failed) {
+        val failedIndex = stages.indexOf(stage).takeIf { it >= 0 }
+            ?: previous.indexOfLast { it.status == "进行中" || it.status == "失败" }.takeIf { it >= 0 }
+            ?: 0
+        return stages.mapIndexed { index, item ->
+            when {
+                index < failedIndex -> ProcessingStepProgress(item.title, "完成", 1f)
+                index == failedIndex -> ProcessingStepProgress(item.title, "失败", previous.getOrNull(index)?.progress ?: 0.4f)
+                else -> ProcessingStepProgress(item.title, "等待", 0f)
+            }
+        }
+    }
+    val currentIndex = when (stage) {
+        ProcessingStage.QUEUED -> -1
+        ProcessingStage.DONE -> stages.lastIndex + 1
+        else -> stages.indexOf(stage)
+    }
+    return stages.mapIndexed { index, item ->
+        when {
+            currentIndex > stages.lastIndex || index < currentIndex -> ProcessingStepProgress(item.title, "完成", 1f)
+            index == currentIndex -> ProcessingStepProgress(item.title, "进行中", 0.55f)
+            else -> ProcessingStepProgress(item.title, "等待", 0f)
+        }
+    }
+}

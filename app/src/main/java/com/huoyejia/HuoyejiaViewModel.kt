@@ -15,6 +15,7 @@ import com.huoyejia.service.NotificationScheduler
 import com.huoyejia.service.ReminderTime
 import com.huoyejia.service.DailyReviewAlarm
 import com.huoyejia.domain.CardAssistantState
+import com.huoyejia.domain.AssistantMessage
  import com.huoyejia.domain.ExplainUiState
  import com.huoyejia.domain.ExplainPack
 import com.huoyejia.domain.NoteProcessingProgress
@@ -70,6 +71,7 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             _isBusy.value = true
             container.seedData.ensureSeeded()
+            migrateLegacyFolders()
             container.processor.schedulePendingNotes()
             refreshStats()
             _isBusy.value = false
@@ -80,6 +82,7 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             _isBusy.value = true
             container.seedData.ensureSeeded()
+            migrateLegacyFolders()
             container.processor.schedulePendingNotes()
             refreshStats()
             if (_explainState.value.selectedNoteId == null) {
@@ -124,12 +127,28 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
 
     fun deleteFolder(folderId: String) {
         viewModelScope.launch {
-            container.folderRepository.deleteFolder(folderId)
             // Keep the cards, but move them out of the deleted folder.
             val notesInFolder = notes.value.filter { it.folderId == folderId }
             notesInFolder.forEach { note ->
-                container.noteRepository.upsert(note.copy(folderId = null))
+                container.noteRepository.moveToFolder(note.noteId, null)
             }
+            container.folderRepository.deleteFolder(folderId)
+            refreshStats()
+        }
+    }
+
+    fun renameFolder(folderId: String, name: String) {
+        if (folderId.isBlank() || name.isBlank()) return
+        viewModelScope.launch {
+            container.folderRepository.renameFolder(folderId, name.trim())
+        }
+    }
+
+    fun moveNoteToFolder(noteId: String, folderId: String?) {
+        if (noteId.isBlank()) return
+        viewModelScope.launch {
+            container.noteRepository.moveToFolder(noteId, folderId?.takeIf { it.isNotBlank() })
+            refreshStats()
         }
     }
 
@@ -188,6 +207,29 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
             refreshStats()
             _isBusy.value = false
         }
+    }
+
+    private suspend fun migrateLegacyFolders() {
+        val existingFolders = container.folderRepository.loadAllFolders().toMutableList()
+        val folderByName = existingFolders.associateBy { it.name.trim() }.toMutableMap()
+        val legacyPattern = Regex("""(?m)^\s*收藏夹[:：]\s*(.+?)\s*$""")
+        container.noteRepository.loadAllNotes()
+            .filter { it.folderId.isNullOrBlank() }
+            .forEach { note ->
+                val match = legacyPattern.find(note.rawText.orEmpty())
+                    ?: legacyPattern.find(note.noteContent)
+                    ?: return@forEach
+                val folderName = match.groupValues[1].trim().take(32)
+                if (folderName.isBlank()) return@forEach
+                val folder = folderByName.getOrPut(folderName) {
+                    FolderEntity(
+                        folderId = java.util.UUID.randomUUID().toString(),
+                        name = folderName,
+                        createdAt = System.currentTimeMillis()
+                    ).also { container.folderRepository.upsert(it) }
+                }
+                container.noteRepository.moveToFolder(note.noteId, folder.folderId)
+            }
     }
 
     fun search(query: String) {
@@ -414,17 +456,24 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
         val cleanQuestion = question.trim()
         if (noteId.isBlank() || cleanQuestion.isBlank()) return
         viewModelScope.launch {
-            _cardAssistantState.value = CardAssistantState(
+            val currentState = _cardAssistantState.value.takeIf { it.noteId == noteId } ?: CardAssistantState(noteId = noteId)
+            val userMessage = AssistantMessage("user", cleanQuestion)
+            val askingMessages = (currentState.messages + userMessage).takeLast(12)
+            _cardAssistantState.value = currentState.copy(
                 noteId = noteId,
                 isAsking = true,
-                question = cleanQuestion
+                question = cleanQuestion,
+                messages = askingMessages,
+                errorMessage = null
             )
 
             val current = container.noteRepository.getNote(noteId)
             if (current == null) {
-                _cardAssistantState.value = CardAssistantState(
+                _cardAssistantState.value = _cardAssistantState.value.copy(
                     noteId = noteId,
+                    isAsking = false,
                     question = cleanQuestion,
+                    messages = askingMessages,
                     errorMessage = "卡片不存在，无法回答。"
                 )
                 return@launch
@@ -438,19 +487,41 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
                 .distinctBy { it.noteId }
                 .take(5)
 
+            val historyHint = askingMessages.dropLast(1).takeLast(6).joinToString("\n") { message ->
+                val role = if (message.role == "user") "用户" else "助手"
+                "$role：${message.content}"
+            }
+            val questionWithHistory = if (historyHint.isBlank()) {
+                cleanQuestion
+            } else {
+                """
+                以下是同一张卡片内的连续追问上下文，请保持回答连贯，不要重复已解释清楚的内容。
+                $historyHint
+
+                用户最新问题：
+                $cleanQuestion
+                """.trimIndent()
+            }
+
             val answer = runCatching {
-                container.blueLM.answerCardQuestion(current, emptyList(), cleanQuestion)
+                container.blueLM.answerCardQuestion(current, related, questionWithHistory)
             }
             _cardAssistantState.value = if (answer.isSuccess) {
-                CardAssistantState(
+                val answerText = answer.getOrNull().orEmpty()
+                _cardAssistantState.value.copy(
                     noteId = noteId,
+                    isAsking = false,
                     question = cleanQuestion,
-                    answer = answer.getOrNull().orEmpty()
+                    answer = answerText,
+                    messages = (askingMessages + AssistantMessage("assistant", answerText)).takeLast(12),
+                    errorMessage = null
                 )
             } else {
-                CardAssistantState(
+                _cardAssistantState.value.copy(
                     noteId = noteId,
+                    isAsking = false,
                     question = cleanQuestion,
+                    messages = askingMessages,
                     errorMessage = answer.exceptionOrNull()?.message ?: "AI 回答失败，请稍后重试。"
                 )
             }

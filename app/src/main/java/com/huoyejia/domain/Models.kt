@@ -85,10 +85,17 @@ data class ExplainUiState(
     val remoteReady: Boolean = false
 )
 
+data class AssistantMessage(
+    val role: String,
+    val content: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 data class CardAssistantState(
     val noteId: String? = null,
     val isAsking: Boolean = false,
     val question: String = "",
     val answer: String = "",
+    val messages: List<AssistantMessage> = emptyList(),
     val errorMessage: String? = null
 )

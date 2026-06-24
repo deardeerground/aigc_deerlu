@@ -85,10 +85,23 @@ class RemoteBlueLMAdapter(
             ready = config.embeddingReady,
             remoteCall = {
                 withContext(Dispatchers.IO) {
+                    val embeddingPath = config.embedding.path.ifBlank { "/embeddings" }
                     val payload = JSONObject()
                         .put("model", config.embedding.model)
-                        .put("input", text)
-                    val response = postJson(config.embedding, "/embeddings", payload)
+                        .put(
+                            "input",
+                            if (embeddingPath.contains("multimodal")) {
+                                JSONArray()
+                                    .put(
+                                        JSONObject()
+                                            .put("type", "text")
+                                            .put("text", text)
+                                    )
+                            } else {
+                                text
+                            }
+                        )
+                    val response = postJson(config.embedding, embeddingPath, payload)
                     val array = response.getJSONArray("data").getJSONObject(0).getJSONArray("embedding")
                     FloatArray(array.length()) { index -> array.getDouble(index).toFloat() }
                 }
@@ -230,8 +243,8 @@ class RemoteBlueLMAdapter(
                                     "content",
                                     """
                                     你是学习卡片 AI 小助手。
-                                    只能基于给定的当前卡片、原文、AI摘要、标签和网址回答。
-                                    不要引用其他卡片或外部知识库内容，除非用户明确贴出对应内容。
+                                    只能基于给定的当前卡片、关联卡片、原文、AI摘要、标签和网址回答。
+                                    可以使用关联卡片帮助解释当前卡片的因果、对比、补充关系，但不要引入未给出的外部知识。
                                     回答要清楚、简洁、适合学生理解；优先给结构化要点和可执行复习建议。
                                     如果材料不足，不要编造，请说明还需要什么信息。
                                     """.trimIndent()
@@ -250,6 +263,9 @@ class RemoteBlueLMAdapter(
                                     AI摘要：${current.summary.orEmpty()}
                                     标签JSON：${current.tags}
                                     主题：${current.topic.orEmpty()}
+
+                                    关联卡片：
+                                    ${related.joinToString("\n\n") { "- 标题：${it.sourceTitle}\n  摘要：${it.summary ?: it.noteContent.take(180)}\n  标签：${it.tags}" }.ifBlank { "无" }}
 
                                     用户问题：
                                     $question
@@ -280,9 +296,17 @@ class RemoteBlueLMAdapter(
                 val payload = JSONObject()
                     .put("model", config.image.model)
                     .put("prompt", prompt)
-                    .put("size", "1024x1024")
-                    .put("background", "transparent")
-                val response = postJson(config.image, "/images/generations", payload)
+                    .put("size", config.image.size)
+                if (config.image.model.contains("seedream", ignoreCase = true)) {
+                    payload
+                        .put("sequential_image_generation", "disabled")
+                        .put("response_format", "url")
+                        .put("stream", false)
+                        .put("watermark", config.image.watermark)
+                } else {
+                    payload.put("background", "transparent")
+                }
+                val response = postJson(config.image.toEndpoint(), config.image.path, payload)
                 val first = response.optJSONArray("data")?.optJSONObject(0)
                 val b64 = first?.optString("b64_json").orEmpty()
                 if (b64.isNotBlank()) {
@@ -409,6 +433,14 @@ class RemoteBlueLMAdapter(
             fallbackCall()
         }
     }
+}
+
+private fun ImageEndpointConfig.toEndpoint(): LlmEndpointConfig {
+    return LlmEndpointConfig(
+        baseUrl = baseUrl,
+        apiKey = apiKey,
+        model = model
+    )
 }
 
 private fun ExplainPack.animationPrompt(): String {

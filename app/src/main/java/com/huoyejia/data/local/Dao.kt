@@ -24,6 +24,9 @@ interface FolderDao {
     @Query("DELETE FROM folders WHERE folder_id = :folderId")
     suspend fun deleteFolder(folderId: String)
 
+    @Query("UPDATE folders SET name = :name WHERE folder_id = :folderId")
+    suspend fun renameFolder(folderId: String, name: String)
+
     @Query("SELECT COUNT(*) FROM notes WHERE folder_id = :folderId")
     suspend fun countNotesInFolder(folderId: String): Int
 }
@@ -50,6 +53,9 @@ interface NoteDao {
 
     @Query("UPDATE notes SET source_title = :title WHERE note_id = :noteId")
     suspend fun updateTitle(noteId: String, title: String)
+
+    @Query("UPDATE notes SET folder_id = :folderId WHERE note_id = :noteId")
+    suspend fun moveToFolder(noteId: String, folderId: String?)
 
     @Query("UPDATE notes SET processed_status = :status WHERE note_id = :noteId")
     suspend fun updateProcessedStatus(noteId: String, status: String)

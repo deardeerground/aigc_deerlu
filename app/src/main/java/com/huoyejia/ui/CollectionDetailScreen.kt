@@ -85,6 +85,7 @@ fun CollectionDetailScreen(
     folderId: String,
     notes: List<NoteEntity>,
     folders: List<FolderEntity>,
+    onMoveNoteToFolder: (String, String?) -> Unit = { _, _ -> },
     onDeleteNote: (String) -> Unit = {}
 ) {
     // 验证输入参数
@@ -112,7 +113,10 @@ fun CollectionDetailScreen(
         emptyList()
     }
     var showDeleteNoteDialog by remember { mutableStateOf(false) }
+    var showNoteActionsDialog by remember { mutableStateOf(false) }
+    var showMoveNoteDialog by remember { mutableStateOf(false) }
     var noteToDelete by remember { mutableStateOf<NoteEntity?>(null) }
+    var noteToManage by remember { mutableStateOf<NoteEntity?>(null) }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -190,13 +194,80 @@ fun CollectionDetailScreen(
                     CollectionCardItem(
                         note = note,
                         onClick = { navController.navigate("detail/${note.noteId}") },
-                        onDelete = { 
-                            noteToDelete = note
-                            showDeleteNoteDialog = true
+                        onManage = {
+                            noteToManage = note
+                            showNoteActionsDialog = true
                         }
                     )
                 }
             }
+        }
+
+        if (showNoteActionsDialog && noteToManage != null) {
+            AlertDialog(
+                onDismissRequest = {
+                    showNoteActionsDialog = false
+                    noteToManage = null
+                },
+                title = { Text(noteToManage?.sourceTitle.orEmpty(), fontWeight = FontWeight.Bold) },
+                text = { Text("移动卡片到其它收藏夹，或删除这张卡片。") },
+                confirmButton = {
+                    Button(onClick = {
+                        showNoteActionsDialog = false
+                        showMoveNoteDialog = true
+                    }) { Text("移动") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        noteToDelete = noteToManage
+                        showNoteActionsDialog = false
+                        showDeleteNoteDialog = true
+                    }) { Text("删除") }
+                }
+            )
+        }
+
+        if (showMoveNoteDialog && noteToManage != null) {
+            AlertDialog(
+                onDismissRequest = {
+                    showMoveNoteDialog = false
+                    noteToManage = null
+                },
+                title = { Text("移动到收藏夹", fontWeight = FontWeight.Bold) },
+                text = {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        item {
+                            FolderMoveRow(
+                                name = "未分类",
+                                selected = noteToManage?.folderId == null,
+                                onClick = {
+                                    onMoveNoteToFolder(noteToManage!!.noteId, null)
+                                    showMoveNoteDialog = false
+                                    noteToManage = null
+                                }
+                            )
+                        }
+                        items(folders, key = { it.folderId }) { targetFolder ->
+                            FolderMoveRow(
+                                name = targetFolder.name,
+                                selected = noteToManage?.folderId == targetFolder.folderId,
+                                onClick = {
+                                    onMoveNoteToFolder(noteToManage!!.noteId, targetFolder.folderId)
+                                    showMoveNoteDialog = false
+                                    noteToManage = null
+                                }
+                            )
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = {
+                        showMoveNoteDialog = false
+                        noteToManage = null
+                    }) { Text("取消") }
+                }
+            )
         }
 
         // 删除卡片对话框
@@ -256,7 +327,7 @@ fun CollectionDetailScreen(
 internal fun CollectionCardItem(
     note: NoteEntity,
     onClick: () -> Unit,
-    onDelete: () -> Unit = {}
+    onManage: () -> Unit = {}
 ) {
     Box(
         modifier = Modifier
@@ -264,7 +335,7 @@ internal fun CollectionCardItem(
             .height(100.dp)
             .combinedClickable(
                 onClick = onClick,
-                onLongClick = onDelete
+                onLongClick = onManage
             )
     ) {
         Card(
@@ -325,6 +396,30 @@ internal fun CollectionCardItem(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun FolderMoveRow(
+    name: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = if (selected) 0.36f else 0.12f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(name, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+            if (selected) Text("当前", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
         }
     }
 }

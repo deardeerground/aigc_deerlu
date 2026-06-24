@@ -110,10 +110,13 @@ class MockBlueLMAdapter : BlueLMAdapter {
         question: String
     ): String {
         val summary = current.summary ?: current.noteContent.take(120).ifBlank { "这张卡片还没有足够内容。" }
+        val relationHint = related.take(2).joinToString("；") { it.sourceTitle }.ifBlank { "暂无关联卡片" }
         return """
             根据当前卡片可先这样理解：$summary
 
             你的问题是：$question
+
+            可参考的关联线索：$relationHint
 
             当前为本地回答模式；配置真实模型后会给出更完整的回答。
         """.trimIndent()

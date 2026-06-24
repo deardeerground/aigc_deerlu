@@ -37,10 +37,10 @@ class VideoGenerationService(
                                 .put("text", prompt)
                         )
                 )
-                .put("generate_audio", true)
-                .put("ratio", "16:9")
-                .put("duration", 11)
-                .put("watermark", false)
+                .put("generate_audio", config.generateAudio)
+                .put("ratio", config.ratio)
+                .put("duration", config.duration)
+                .put("watermark", config.watermark)
         )
         val directUrl = createResponse.findVideoUrl()
         val videoUrl = directUrl ?: pollForVideoUrl(createResponse.findTaskId())
@@ -113,7 +113,7 @@ class VideoGenerationService(
 
 private fun ExplainPack.toVideoPrompt(): String {
     return """
-        全程生成一段 11 秒、16:9 横屏中文教学讲解视频，风格像高质量课程短视频。
+        全程生成一段中文教学讲解视频，风格像高质量课程短视频。
         标题：$title
         开场：$hook
         讲解：$conciseExplanation

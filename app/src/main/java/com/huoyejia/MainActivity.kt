@@ -190,6 +190,7 @@ class MainActivity : ComponentActivity() {
                                 notes = notes,
                                 folders = folders,
                                 onCreateFolder = viewModel::createFolder,
+                                onRenameFolder = viewModel::renameFolder,
                                 onDeleteFolder = viewModel::deleteFolder,
                                 onDeleteNote = viewModel::deleteNote
                             )
@@ -253,6 +254,7 @@ class MainActivity : ComponentActivity() {
                                 folderId = folderId,
                                 notes = notes,
                                 folders = folders,
+                                onMoveNoteToFolder = viewModel::moveNoteToFolder,
                                 onDeleteNote = viewModel::deleteNote
                             )
                         }

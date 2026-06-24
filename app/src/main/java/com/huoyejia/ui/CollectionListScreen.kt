@@ -71,6 +71,7 @@ fun CollectionListScreen(
     notes: List<NoteEntity>,
     folders: List<FolderEntity>,
     onCreateFolder: (String) -> Unit,
+    onRenameFolder: (String, String) -> Unit = { _, _ -> },
     onDeleteFolder: (String) -> Unit = {},
     onDeleteNote: (String) -> Unit = {},
     onRefresh: () -> Unit = {}
@@ -80,7 +81,11 @@ fun CollectionListScreen(
     var isSearchExpanded by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var showDeleteFolderDialog by remember { mutableStateOf(false) }
+    var showFolderActionsDialog by remember { mutableStateOf(false) }
+    var showRenameFolderDialog by remember { mutableStateOf(false) }
     var folderToDelete by remember { mutableStateOf<FolderEntity?>(null) }
+    var folderToEdit by remember { mutableStateOf<FolderEntity?>(null) }
+    var editingFolderName by remember { mutableStateOf("") }
     var showDeleteNoteDialog by remember { mutableStateOf(false) }
     var noteToDelete by remember { mutableStateOf<NoteEntity?>(null) }
 
@@ -232,94 +237,83 @@ fun CollectionListScreen(
 
                 // 收藏夹列表
                 items(filteredFolders, key = { it.folderId }) { folder ->
-                    if (folder != null && folder.folderId.isNotBlank()) {
-                        val noteCount = if (notes.isNotEmpty()) {
-                            notes.count { it.folderId == folder.folderId }
-                        } else {
-                            0
-                        }
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .combinedClickable(
-                                    onClick = {
-                                        if (folder.folderId.isNotBlank()) {
-                                            navController.navigate("collection_detail/${folder.folderId}")
-                                        }
-                                    },
-                                    onLongClick = {
-                                        folderToDelete = folder
-                                        showDeleteFolderDialog = true
-                                    }
-                                )
+                    val noteCount = notes.count { it.folderId == folder.folderId }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .combinedClickable(
+                                onClick = { navController.navigate("collection_detail/${folder.folderId}") },
+                                onLongClick = {
+                                    folderToEdit = folder
+                                    showFolderActionsDialog = true
+                                }
+                            )
+                    ) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color.White.copy(alpha = 0.90f)
+                            ),
+                            border = techPanelBorder(),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                         ) {
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = Color.White.copy(alpha = 0.90f)
-                                ),
-                                border = techPanelBorder(),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                            Column(
+                                modifier = Modifier.padding(16.dp)
                             ) {
-                                Column(
-                                    modifier = Modifier.padding(16.dp)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = folder.name,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 18.sp,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        Text(
-                                            text = "${noteCount}个内容",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 16.sp,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.padding(start = 8.dp)
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text(
+                                        text = folder.name,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 18.sp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = "${noteCount}个内容",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(start = 8.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
 
-                                    // 卡片标题预览
-                                    val folderNotes = notes.filter { it.folderId == folder.folderId }
-                                    if (folderNotes.isNotEmpty()) {
-                                        LazyRow(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            items(folderNotes, key = { it.noteId }) { note ->
-                                                Surface(
-                                                    shape = RoundedCornerShape(10.dp),
-                                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
-                                                    modifier = Modifier
-                                                        .combinedClickable(
-                                                            onClick = { /* 可以跳转到详情页 */ },
-                                                            onLongClick = {
-                                                                noteToDelete = note
-                                                                showDeleteNoteDialog = true
-                                                            }
-                                                        )
-                                                        .background(
-                                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                                                            RoundedCornerShape(4.dp)
-                                                        )
-                                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                                ) {
-                                                    Text(
-                                                        text = note.sourceTitle,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        fontSize = 12.sp,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
+                                val folderNotes = notes.filter { it.folderId == folder.folderId }
+                                if (folderNotes.isNotEmpty()) {
+                                    LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        items(folderNotes, key = { it.noteId }) { note ->
+                                            Surface(
+                                                shape = RoundedCornerShape(10.dp),
+                                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+                                                modifier = Modifier
+                                                    .combinedClickable(
+                                                        onClick = { navController.navigate("detail/${note.noteId}") },
+                                                        onLongClick = {
+                                                            noteToDelete = note
+                                                            showDeleteNoteDialog = true
+                                                        }
                                                     )
-                                                }
+                                                    .background(
+                                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                                        RoundedCornerShape(4.dp)
+                                                    )
+                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            ) {
+                                                Text(
+                                                    text = note.sourceTitle,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    fontSize = 12.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
                                             }
                                         }
                                     }
@@ -432,6 +426,66 @@ fun CollectionListScreen(
                     TextButton(onClick = { showCreateDialog = false }) {
                         Text("取消")
                     }
+                }
+            )
+        }
+
+        if (showFolderActionsDialog && folderToEdit != null) {
+            AlertDialog(
+                onDismissRequest = {
+                    showFolderActionsDialog = false
+                    folderToEdit = null
+                },
+                title = { Text(folderToEdit?.name.orEmpty(), fontWeight = FontWeight.Bold) },
+                text = { Text("选择要对这个收藏夹执行的操作。") },
+                confirmButton = {
+                    Button(onClick = {
+                        editingFolderName = folderToEdit?.name.orEmpty()
+                        showFolderActionsDialog = false
+                        showRenameFolderDialog = true
+                    }) { Text("重命名") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        folderToDelete = folderToEdit
+                        showFolderActionsDialog = false
+                        showDeleteFolderDialog = true
+                    }) { Text("删除") }
+                }
+            )
+        }
+
+        if (showRenameFolderDialog && folderToEdit != null) {
+            AlertDialog(
+                onDismissRequest = {
+                    showRenameFolderDialog = false
+                    folderToEdit = null
+                },
+                title = { Text("重命名收藏夹", fontWeight = FontWeight.Bold) },
+                text = {
+                    OutlinedTextField(
+                        value = editingFolderName,
+                        onValueChange = { editingFolderName = it },
+                        label = { Text("收藏夹名称") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            onRenameFolder(folderToEdit!!.folderId, editingFolderName)
+                            showRenameFolderDialog = false
+                            folderToEdit = null
+                        },
+                        enabled = editingFolderName.isNotBlank()
+                    ) { Text("保存") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showRenameFolderDialog = false
+                        folderToEdit = null
+                    }) { Text("取消") }
                 }
             )
         }
