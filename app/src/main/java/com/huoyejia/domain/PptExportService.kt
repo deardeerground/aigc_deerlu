@@ -16,6 +16,7 @@ import java.io.FileOutputStream
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 private const val SLIDE_W = 9144000
@@ -30,8 +31,13 @@ class PptExportService(
         val foregroundImages = slides.map { slide ->
             blueLM.generateSlideImage(slide.imagePrompt) ?: TransparentIconFactory.createPng(slide.icon)
         }
-        val backgroundImages = slides.mapIndexed { index, slide ->
-            if (slide.backgroundAsset != null) readAssetBytes(slide.backgroundAsset) else readTemplateBackground(index)
+        val template = loadTemplateDeck()
+        val backgroundImages = if (template != null) {
+            List(slides.size) { null }
+        } else {
+            slides.mapIndexed { index, slide ->
+                if (slide.backgroundAsset != null) readAssetBytes(slide.backgroundAsset) else readTemplateBackground(index)
+            }
         }
 
         return withContext(Dispatchers.IO) {
@@ -40,27 +46,59 @@ class PptExportService(
             val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
             val file = File(dir, "${pack.title.safeFileName()}_$timestamp.pptx")
             ZipOutputStream(FileOutputStream(file)).use { zip ->
-                zip.text("[Content_Types].xml", contentTypes(slides.size))
+                zip.text("[Content_Types].xml", contentTypes(slides.size, template))
                 zip.text("_rels/.rels", rootRels())
                 zip.text("docProps/core.xml", coreProps(pack.title))
                 zip.text("docProps/app.xml", appProps(slides.size))
                 zip.text("ppt/presentation.xml", presentation(slides.size))
-                zip.text("ppt/_rels/presentation.xml.rels", presentationRels(slides.size))
-                zip.text("ppt/slideMasters/slideMaster1.xml", slideMaster())
-                zip.text("ppt/slideMasters/_rels/slideMaster1.xml.rels", slideMasterRels())
-                zip.text("ppt/slideLayouts/slideLayout1.xml", slideLayout())
-                zip.text("ppt/slideLayouts/_rels/slideLayout1.xml.rels", slideLayoutRels())
-                zip.text("ppt/theme/theme1.xml", theme())
+                zip.text("ppt/_rels/presentation.xml.rels", presentationRels(slides.size, template))
+                if (template != null) {
+                    zip.copyTemplateParts(template)
+                } else {
+                    zip.text("ppt/slideMasters/slideMaster1.xml", slideMaster())
+                    zip.text("ppt/slideMasters/_rels/slideMaster1.xml.rels", slideMasterRels())
+                    zip.text("ppt/slideLayouts/slideLayout1.xml", slideLayout())
+                    zip.text("ppt/slideLayouts/_rels/slideLayout1.xml.rels", slideLayoutRels())
+                    zip.text("ppt/theme/theme1.xml", theme())
+                }
                 slides.forEachIndexed { index, slide ->
                     val slideNumber = index + 1
                     zip.bytes("ppt/media/fg$slideNumber.png", foregroundImages[index])
                     backgroundImages[index]?.let { zip.bytes("ppt/media/bg$slideNumber.jpeg", it) }
+                    val layoutIndex = template?.layoutFor(index) ?: 1
                     zip.text("ppt/slides/slide$slideNumber.xml", slideXml(slide, slideNumber, backgroundImages[index] != null))
-                    zip.text("ppt/slides/_rels/slide$slideNumber.xml.rels", slideRels(slideNumber, backgroundImages[index] != null))
+                    zip.text("ppt/slides/_rels/slide$slideNumber.xml.rels", slideRels(slideNumber, backgroundImages[index] != null, layoutIndex))
                 }
             }
             file
         }
+    }
+
+    private fun loadTemplateDeck(): TemplateDeck? {
+        val bytes = readAssetBytes("ppt_template/PPTmoban.pptx") ?: return null
+        val parts = linkedMapOf<String, ByteArray>()
+        ZipInputStream(bytes.inputStream()).use { input ->
+            generateSequence { input.nextEntry }.forEach { entry ->
+                if (!entry.isDirectory && entry.name.isTemplatePart()) {
+                    parts[entry.name] = input.readBytes()
+                }
+                input.closeEntry()
+            }
+        }
+        val layoutNumbers = parts.keys
+            .mapNotNull { Regex("""ppt/slideLayouts/slideLayout(\d+)\.xml""").matchEntire(it)?.groupValues?.get(1)?.toIntOrNull() }
+            .sorted()
+        val themeNumbers = parts.keys
+            .mapNotNull { Regex("""ppt/theme/theme(\d+)\.xml""").matchEntire(it)?.groupValues?.get(1)?.toIntOrNull() }
+            .sorted()
+        val masterRels = parts["ppt/slideMasters/_rels/slideMaster1.xml.rels"]?.toString(Charsets.UTF_8)
+            ?: slideMasterRels()
+        return TemplateDeck(
+            parts = parts,
+            layoutNumbers = layoutNumbers.ifEmpty { listOf(1) },
+            themeNumbers = themeNumbers.ifEmpty { listOf(1) },
+            masterRels = masterRels
+        )
     }
 
     private fun readTemplateBackground(index: Int): ByteArray? {
@@ -117,6 +155,15 @@ class PptExportService(
         }
         return ExportSlide(layout, title, bullets, prompt, icon, animationHint)
     }
+}
+
+private data class TemplateDeck(
+    val parts: Map<String, ByteArray>,
+    val layoutNumbers: List<Int>,
+    val themeNumbers: List<Int>,
+    val masterRels: String
+) {
+    fun layoutFor(index: Int): Int = layoutNumbers[index % layoutNumbers.size]
 }
 
 private enum class LayoutStyle { Cover, Split, Cards, Timeline, Compare, Storyboard, Closing }
@@ -214,14 +261,33 @@ private fun ZipOutputStream.bytes(path: String, content: ByteArray) {
     closeEntry()
 }
 
+private fun ZipOutputStream.copyTemplateParts(template: TemplateDeck) {
+    template.parts.forEach { (path, content) ->
+        bytes(path, content)
+    }
+}
+
+private fun String.isTemplatePart(): Boolean {
+    return startsWith("ppt/slideMasters/") ||
+        startsWith("ppt/slideLayouts/") ||
+        startsWith("ppt/theme/") ||
+        startsWith("ppt/media/")
+}
+
 private fun String.safeFileName(): String = replace(Regex("[\\\\/:*?\"<>|\\s]+"), "_").trim('_').take(40).ifBlank { "huoyejia_ppt" }
 
 private fun String.xml(): String = replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&apos;")
 
-private fun contentTypes(slideCount: Int): String {
+private fun contentTypes(slideCount: Int, template: TemplateDeck? = null): String {
     val slideOverrides = (1..slideCount).joinToString("") {
         """<Override PartName="/ppt/slides/slide$it.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>"""
     }
+    val layoutOverrides = template?.layoutNumbers?.joinToString("") {
+        """<Override PartName="/ppt/slideLayouts/slideLayout$it.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>"""
+    } ?: """<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>"""
+    val themeOverrides = template?.themeNumbers?.joinToString("") {
+        """<Override PartName="/ppt/theme/theme$it.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>"""
+    } ?: """<Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>"""
     return """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -232,8 +298,8 @@ private fun contentTypes(slideCount: Int): String {
 <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
 <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
 <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
-<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
-<Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+$layoutOverrides
+$themeOverrides
 $slideOverrides
 </Types>"""
 }
@@ -267,22 +333,25 @@ private fun presentation(slideCount: Int): String {
 </p:presentation>"""
 }
 
-private fun presentationRels(slideCount: Int): String {
+private fun presentationRels(slideCount: Int, template: TemplateDeck? = null): String {
     val slides = (1..slideCount).joinToString("") {
         """<Relationship Id="rId${it + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide$it.xml"/>"""
     }
+    val master = template?.let {
+        """<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>"""
+    } ?: """<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>"""
     return """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>
+$master
 $slides
 </Relationships>"""
 }
 
-private fun slideRels(number: Int, hasBackground: Boolean): String {
+private fun slideRels(number: Int, hasBackground: Boolean, layoutIndex: Int = 1): String {
     val bg = if (hasBackground) """<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/bg$number.jpeg"/>""" else ""
     return """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout$layoutIndex.xml"/>
 <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/fg$number.png"/>
 $bg
 </Relationships>"""
