@@ -5,6 +5,7 @@ import com.huoyejia.ai.BlueLMAdapter
 import com.huoyejia.ai.LlmRuntimeConfig
 import com.huoyejia.ai.MockBlueLMAdapter
 import com.huoyejia.ai.RemoteBlueLMAdapter
+import com.huoyejia.ai.ServerBlueLMAdapter
 import com.huoyejia.data.FolderRepository
 import com.huoyejia.data.NoteRepository
 import com.huoyejia.data.RelationRepository
@@ -28,7 +29,9 @@ class AppContainer(context: Context) {
     private val db = HuoyejiaDatabase.create(context)
     private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mockBlueLM = MockBlueLMAdapter()
-    val blueLM: BlueLMAdapter = RemoteBlueLMAdapter(LlmRuntimeConfig.fromBuildConfig(), mockBlueLM)
+    // 优先走自建服务器（ServerBlueLMAdapter），失败再降级到直连大模型（RemoteBlueLMAdapter），最终降级到本地 mock
+    private val directLM = RemoteBlueLMAdapter(LlmRuntimeConfig.fromBuildConfig(), mockBlueLM)
+    val blueLM: BlueLMAdapter = ServerBlueLMAdapter(directLM)
 
     val folderRepository = FolderRepository(db.folderDao())
     val noteRepository = NoteRepository(db.noteDao(), db.embeddingDao())

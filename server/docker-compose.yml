@@ -1,0 +1,54 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: huoyejia-db
+    restart: always
+    environment:
+      POSTGRES_DB: huoyejia
+      POSTGRES_USER: huoyejia
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-huoyejia}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U huoyejia"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    container_name: huoyejia-api
+    restart: always
+    ports:
+      - "${SERVER_PORT:-8000}:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://huoyejia:${DB_PASSWORD:-huoyejia}@db:5432/huoyejia
+      - LLM_CHAT_BASE_URL=${LLM_CHAT_BASE_URL}
+      - LLM_CHAT_API_KEY=${LLM_CHAT_API_KEY}
+      - LLM_CHAT_MODEL=${LLM_CHAT_MODEL}
+      - LLM_EMBEDDING_BASE_URL=${LLM_EMBEDDING_BASE_URL}
+      - LLM_EMBEDDING_API_KEY=${LLM_EMBEDDING_API_KEY}
+      - LLM_EMBEDDING_MODEL=${LLM_EMBEDDING_MODEL}
+      - LLM_EMBEDDING_PATH=${LLM_EMBEDDING_PATH:-/embeddings}
+      - LLM_IMAGE_BASE_URL=${LLM_IMAGE_BASE_URL}
+      - LLM_IMAGE_API_KEY=${LLM_IMAGE_API_KEY}
+      - LLM_IMAGE_MODEL=${LLM_IMAGE_MODEL}
+      - LLM_IMAGE_PATH=${LLM_IMAGE_PATH:-/images/generations}
+      - LLM_IMAGE_SIZE=${LLM_IMAGE_SIZE:-1024x1024}
+      - VIDEO_BASE_URL=${VIDEO_BASE_URL}
+      - VIDEO_API_KEY=${VIDEO_API_KEY}
+      - VIDEO_MODEL=${VIDEO_MODEL}
+      - VIDEO_CREATE_PATH=${VIDEO_CREATE_PATH:-/videos/generations}
+      - VIDEO_STATUS_PATH=${VIDEO_STATUS_PATH:-/videos/{id}}
+      - VIDEO_GENERATE_AUDIO=${VIDEO_GENERATE_AUDIO:-true}
+      - VIDEO_RATIO=${VIDEO_RATIO:-16:9}
+      - VIDEO_DURATION=${VIDEO_DURATION:-10}
+      - VIDEO_WATERMARK=${VIDEO_WATERMARK:-false}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

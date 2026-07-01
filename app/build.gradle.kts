@@ -42,6 +42,8 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        // ===== 后端服务地址（部署到云服务器后填写） =====
+        buildConfigField("String", "SERVER_BASE_URL", "\"${readConfig("SERVER_BASE_URL").ifBlank { "http://YOUR_SERVER_IP:8000" }.gradleEscaped()}\"")
         buildConfigField("String", "LLM_BASE_URL", "\"${readConfig("LLM_BASE_URL").gradleEscaped()}\"")
         buildConfigField("String", "LLM_API_KEY", "\"${readConfig("LLM_API_KEY").gradleEscaped()}\"")
         buildConfigField("String", "LLM_CHAT_MODEL", "\"${readConfig("LLM_CHAT_MODEL").ifBlank { "gpt-4.1-mini" }.gradleEscaped()}\"")

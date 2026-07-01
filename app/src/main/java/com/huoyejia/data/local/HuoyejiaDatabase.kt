@@ -31,7 +31,7 @@ abstract class HuoyejiaDatabase : RoomDatabase() {
                 context.applicationContext,
                 HuoyejiaDatabase::class.java,
                 "huoyejia.db"
-            ).build()
+            ).fallbackToDestructiveMigration().build()
         }
     }
 }
