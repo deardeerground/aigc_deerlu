@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -91,6 +92,7 @@ import com.huoyejia.data.local.NoteRelationEntity
 import com.huoyejia.data.local.ReviewCardEntity
 import com.huoyejia.data.local.UserStatsEntity
 import com.huoyejia.data.local.FolderEntity
+import com.huoyejia.domain.AnswerSource
 import com.huoyejia.domain.AssistantMessage
 import com.huoyejia.domain.CardAssistantState
 import com.huoyejia.domain.ExplainUiState
@@ -306,11 +308,16 @@ fun CaptureScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
+            val saveShape = RoundedCornerShape(26.dp)
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .pressMicroInteraction(
+                        enabled = text.isNotBlank() || url.isNotBlank() || screenshotUri != null,
+                        shape = saveShape
+                    )
                     .clickable(enabled = text.isNotBlank() || url.isNotBlank() || screenshotUri != null) { showFolderPicker = true },
-                shape = RoundedCornerShape(26.dp),
+                shape = saveShape,
                 color = MaterialTheme.colorScheme.primary,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f))
             ) {
@@ -429,9 +436,13 @@ private fun CaptureActionCard(
     action: String,
     onClick: () -> Unit
 ) {
+    val cardShape = RoundedCornerShape(22.dp)
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .pressMicroInteraction(shape = cardShape)
+            .clickable(onClick = onClick),
+        shape = cardShape,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f))
     ) {
@@ -548,11 +559,13 @@ private fun FolderRow(
     selected: Boolean,
     onClick: () -> Unit
 ) {
+    val rowShape = RoundedCornerShape(16.dp)
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .pressMicroInteraction(shape = rowShape)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
+        shape = rowShape,
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
     ) {
@@ -706,8 +719,19 @@ fun HistoryScreen(
 fun DashboardScreen(
     stats: UserStatsEntity?,
     notes: List<NoteEntity>,
-    cards: List<ReviewCardEntity>
+    cards: List<ReviewCardEntity>,
+    folders: List<FolderEntity>,
+    relations: List<NoteRelationEntity>
 ) {
+    val analytics = remember(notes, cards, folders, relations, stats) {
+        buildLearningAnalytics(notes, cards, folders, relations, stats)
+    }
+    val learningReport = remember(notes, cards, folders, relations, stats, analytics) {
+        buildLearningReport(notes, cards, folders, relations, stats, analytics)
+    }
+    val confusionItems = remember(notes, cards, relations) {
+        buildConfusionItems(notes, cards, relations)
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -715,7 +739,7 @@ fun DashboardScreen(
             .padding(horizontal = 18.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        SectionTitle("数字囤积指数")
+        SectionTitle("学习统计")
         val value = stats?.hoardingIndex ?: 0
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary),
@@ -727,18 +751,458 @@ fun DashboardScreen(
             Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(value.toString(), color = Color.White, fontSize = 54.sp, fontWeight = FontWeight.Black)
                 ProgressBar(value / 100f)
-                Text(stats?.indexReason ?: "正在计算...", color = Color.White.copy(alpha = 0.92f))
+                Text(stats?.indexReason ?: "正在计算学习状态...", color = Color.White.copy(alpha = 0.92f), lineHeight = 20.sp)
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MetricPill("收藏数", notes.size.toString())
-            MetricPill("已复习", notes.count { it.reviewedCount > 0 }.toString())
-            MetricPill("待处理", notes.count { it.processedStatus != "PROCESSED" }.toString())
+            MetricPill("知识点", notes.size.toString())
+            MetricPill("已复习", analytics.reviewedCount.toString())
+            MetricPill("待处理", "${analytics.unprocessedPercent}%")
         }
-        AssistCard("行为建议", "不要继续扩大收藏池。优先打开回流卡，完成 1 张后再新增材料，强化“从收藏到理解”的行为闭环。")
-        AssistCard("重复收藏率", "${((stats?.duplicateRate ?: 0f) * 100).toInt()}% 高相似收藏会抬高囤积指数。")
-        AssistCard("待复习卡片", "${cards.count { it.status == "TODO" }} 张待完成，复习后会自动更新状态。")
+        LearningHealthPanel(analytics)
+        LearningReportPanel(learningReport)
+        ConfusionReviewPanel(confusionItems)
+        FolderProgressPanel(analytics.folderProgress)
+        TagKnowledgePanel(analytics.tagStats)
+        WeeklyTrendPanel(analytics.weeklyTrend)
+        AssistCard("答辩亮点", "统计页现在可以一键生成学习报告，并自动整理易混点；卡片问答会标注回答依据，能更好回应 AIGC 可信度和学习闭环问题。")
     }
+}
+
+private data class LearningAnalytics(
+    val reviewedCount: Int,
+    val unprocessedPercent: Int,
+    val duplicateRateNow: Int,
+    val duplicateRatePrevious: Int,
+    val duplicateTrendLabel: String,
+    val folderProgress: List<FolderProgressStat>,
+    val tagStats: List<TagKnowledgeStat>,
+    val weeklyTrend: List<WeeklyTrendStat>
+)
+
+private data class FolderProgressStat(
+    val name: String,
+    val total: Int,
+    val reviewed: Int,
+    val progress: Float
+)
+
+private data class TagKnowledgeStat(
+    val tag: String,
+    val count: Int,
+    val reviewed: Int
+)
+
+private data class WeeklyTrendStat(
+    val label: String,
+    val added: Int,
+    val reviewed: Int
+)
+
+private data class LearningReport(
+    val title: String,
+    val body: String,
+    val highlights: List<Pair<String, String>>
+)
+
+private data class ConfusionItem(
+    val title: String,
+    val reason: String,
+    val action: String,
+    val severity: Float
+)
+
+private fun buildLearningAnalytics(
+    notes: List<NoteEntity>,
+    cards: List<ReviewCardEntity>,
+    folders: List<FolderEntity>,
+    relations: List<NoteRelationEntity>,
+    stats: UserStatsEntity?
+): LearningAnalytics {
+    val reviewedNoteIds = cards.filter { it.status == "DONE" }.map { it.noteId }.toSet()
+    val reviewedCount = notes.count { it.reviewedCount > 0 || it.noteId in reviewedNoteIds }
+    val unprocessedPercent = percent(notes.count { it.processedStatus != "PROCESSED" }, notes.size)
+    val duplicateRateNow = ((stats?.duplicateRate ?: currentDuplicateRate(notes)) * 100).toInt()
+    val lastWeekNotes = notes.filter { it.createdAt < daysAgoMillis(7) }
+    val duplicateRatePrevious = (currentDuplicateRate(lastWeekNotes) * 100).toInt()
+    val duplicateDelta = duplicateRateNow - duplicateRatePrevious
+    val duplicateTrendLabel = when {
+        lastWeekNotes.isEmpty() -> "暂无上周基线"
+        duplicateDelta > 0 -> "较上周 +$duplicateDelta%"
+        duplicateDelta < 0 -> "较上周 $duplicateDelta%"
+        else -> "较上周持平"
+    }
+    val folderProgress = buildFolderProgress(notes, folders, reviewedNoteIds)
+    val tagStats = buildTagStats(notes, reviewedNoteIds)
+    val weeklyTrend = buildWeeklyTrend(notes, cards)
+    return LearningAnalytics(
+        reviewedCount = reviewedCount,
+        unprocessedPercent = unprocessedPercent,
+        duplicateRateNow = duplicateRateNow,
+        duplicateRatePrevious = duplicateRatePrevious,
+        duplicateTrendLabel = duplicateTrendLabel,
+        folderProgress = folderProgress,
+        tagStats = tagStats,
+        weeklyTrend = weeklyTrend
+    )
+}
+
+private fun buildFolderProgress(
+    notes: List<NoteEntity>,
+    folders: List<FolderEntity>,
+    reviewedNoteIds: Set<String>
+): List<FolderProgressStat> {
+    val folderNames = folders.associate { it.folderId to it.name }
+    return notes
+        .groupBy { it.folderId ?: "__uncategorized__" }
+        .map { (folderId, folderNotes) ->
+            val reviewed = folderNotes.count { it.reviewedCount > 0 || it.noteId in reviewedNoteIds }
+            FolderProgressStat(
+                name = if (folderId == "__uncategorized__") "未归档" else folderNames[folderId].orEmpty().ifBlank { "已删除收藏夹" },
+                total = folderNotes.size,
+                reviewed = reviewed,
+                progress = if (folderNotes.isEmpty()) 0f else reviewed.toFloat() / folderNotes.size
+            )
+        }
+        .sortedWith(compareBy<FolderProgressStat> { it.progress }.thenByDescending { it.total })
+        .take(6)
+}
+
+private fun buildTagStats(notes: List<NoteEntity>, reviewedNoteIds: Set<String>): List<TagKnowledgeStat> {
+    return notes
+        .flatMap { note ->
+            JsonText.decodeList(note.tags)
+                .ifEmpty { listOf(note.topic ?: "未分类") }
+                .map { tag -> tag to note }
+        }
+        .groupBy({ it.first }, { it.second })
+        .map { (tag, taggedNotes) ->
+            val uniqueNotes = taggedNotes.distinctBy { it.noteId }
+            TagKnowledgeStat(
+                tag = displayTag(tag),
+                count = uniqueNotes.size,
+                reviewed = uniqueNotes.count { it.reviewedCount > 0 || it.noteId in reviewedNoteIds }
+            )
+        }
+        .sortedByDescending { it.count }
+        .take(8)
+}
+
+private fun buildWeeklyTrend(notes: List<NoteEntity>, cards: List<ReviewCardEntity>): List<WeeklyTrendStat> {
+    val today = LocalDate.now()
+    return (6 downTo 0).map { offset ->
+        val day = today.minusDays(offset.toLong())
+        val added = notes.count { it.createdAt.toLocalDate() == day }
+        val reviewed = cards.count { card ->
+            card.status == "DONE" && card.reviewedAt?.toLocalDate() == day
+        }.let { cardReviews ->
+            if (cardReviews > 0) cardReviews else notes.count { it.reviewedCount > 0 && it.createdAt.toLocalDate() == day }
+        }
+        WeeklyTrendStat(
+            label = if (offset == 0) "今" else "${day.monthValue}/${day.dayOfMonth}",
+            added = added,
+            reviewed = reviewed
+        )
+    }
+}
+
+private fun buildLearningReport(
+    notes: List<NoteEntity>,
+    cards: List<ReviewCardEntity>,
+    folders: List<FolderEntity>,
+    relations: List<NoteRelationEntity>,
+    stats: UserStatsEntity?,
+    analytics: LearningAnalytics
+): LearningReport {
+    val topFolder = analytics.folderProgress.maxByOrNull { it.total }
+    val topTags = analytics.tagStats.take(3).joinToString("、") { "${it.tag}(${it.count})" }.ifBlank { "暂无标签" }
+    val doneCards = cards.count { it.status == "DONE" }
+    val todoCards = cards.count { it.status != "DONE" }
+    val processed = notes.count { it.processedStatus == "PROCESSED" }
+    val body = buildString {
+        appendLine("本阶段共沉淀 ${notes.size} 个知识点，AI 已完成整理 $processed 个。")
+        appendLine("已完成复习 ${analytics.reviewedCount} 个知识点，复习卡完成 $doneCards 张，待回流 $todoCards 张。")
+        appendLine("当前高频标签：$topTags。")
+        appendLine("知识关联已建立 ${relations.size} 条，说明内容不再只是堆积，而是在形成可复习的知识网络。")
+        appendLine("数字囤积指数：${stats?.hoardingIndex ?: 0}，${stats?.indexReason ?: "正在计算学习状态。"}")
+        appendLine("下一步建议：优先处理未处理比例 ${analytics.unprocessedPercent}% 的内容，并从易混点列表开始复习。")
+    }.trim()
+    return LearningReport(
+        title = "学习报告 · ${stats?.statDate ?: "今日"}",
+        body = body,
+        highlights = listOf(
+            "收藏夹" to (topFolder?.let { "${it.name} ${it.reviewed}/${it.total}" } ?: "${folders.size} 个"),
+            "高频标签" to topTags,
+            "知识关系" to "${relations.size} 条",
+            "复习卡" to "${cards.size} 张"
+        )
+    )
+}
+
+private fun buildConfusionItems(
+    notes: List<NoteEntity>,
+    cards: List<ReviewCardEntity>,
+    relations: List<NoteRelationEntity>
+): List<ConfusionItem> {
+    val noteById = notes.associateBy { it.noteId }
+    val relationItems = relations
+        .filter { it.confidence >= 0.58f || it.relationType in setOf("similar", "same_topic", "contrast") }
+        .sortedByDescending { it.confidence }
+        .mapNotNull { relation ->
+            val from = noteById[relation.noteIdFrom]
+            val to = noteById[relation.noteIdTo]
+            if (from == null || to == null) return@mapNotNull null
+            val label = when (relation.relationType) {
+                "contrast" -> "容易混淆的对比概念"
+                "same_topic", "similar" -> "相似内容重复收藏"
+                "cause_effect" -> "因果链条需要复述"
+                else -> "关联知识需要辨析"
+            }
+            ConfusionItem(
+                title = "${from.sourceTitle.take(12)} ↔ ${to.sourceTitle.take(12)}",
+                reason = "$label：${relation.evidence.ifBlank { "两张卡片关联度较高。" }}",
+                action = "复习时先分别用一句话解释二者，再说出差异或因果方向。",
+                severity = relation.confidence.coerceIn(0f, 1f)
+            )
+        }
+    val cardItems = cards
+        .filter { it.status != "DONE" }
+        .sortedWith(compareByDescending<ReviewCardEntity> { it.difficulty == "hard" }.thenByDescending { it.reviewCount })
+        .mapNotNull { card ->
+            val note = noteById[card.noteId] ?: return@mapNotNull null
+            ConfusionItem(
+                title = note.sourceTitle.take(24),
+                reason = "待回流问题：${card.question}",
+                action = card.explanation.ifBlank { "先尝试口头回答，再查看解释。"},
+                severity = if (card.difficulty == "hard") 0.82f else 0.62f
+            )
+        }
+    val duplicateItems = notes
+        .filter { it.duplicateScore >= 0.72f }
+        .sortedByDescending { it.duplicateScore }
+        .map {
+            ConfusionItem(
+                title = it.sourceTitle.take(24),
+                reason = "重复收藏风险 ${(it.duplicateScore * 100).toInt()}%，可能说明这个点反复遇到但尚未真正掌握。",
+                action = "查看已有相似卡片，合并成一个明确结论。",
+                severity = it.duplicateScore.coerceIn(0f, 1f)
+            )
+        }
+    return (relationItems + cardItems + duplicateItems)
+        .distinctBy { it.title + it.reason.take(16) }
+        .sortedByDescending { it.severity }
+        .take(6)
+}
+
+@Composable
+private fun LearningReportPanel(report: LearningReport) {
+    val context = LocalContext.current
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(26.dp),
+        colors = techCardColors(),
+        border = techPanelBorder()
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("一键学习报告", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary, fontSize = 20.sp)
+                    TinyText("自动把收藏、复习、标签和知识关联整理成可汇报文本。")
+                }
+                Button(onClick = {
+                    copyText(context, "学习报告", "${report.title}\n\n${report.body}")
+                    Toast.makeText(context, "学习报告已复制", Toast.LENGTH_SHORT).show()
+                }) {
+                    Text("复制")
+                }
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                report.highlights.forEach { (label, value) ->
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
+                    ) {
+                        Column(Modifier.padding(horizontal = 11.dp, vertical = 8.dp)) {
+                            Text(value, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
+                            Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f))
+                        }
+                    }
+                }
+            }
+            SelectionContainer {
+                Text(report.body, lineHeight = 20.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConfusionReviewPanel(items: List<ConfusionItem>) {
+    StatsPanel(title = "错题 / 易混点自动整理") {
+        if (items.isEmpty()) {
+            TinyText("暂无明显易混点。完成更多复习卡或建立更多关联后，这里会自动整理。")
+        } else {
+            items.forEach { item ->
+                val shape = RoundedCornerShape(18.dp)
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = shape,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.66f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                ) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(item.title, modifier = Modifier.weight(1f), fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            StatusChip("风险${(item.severity * 100).toInt()}%")
+                        }
+                        Text(item.reason, lineHeight = 19.sp)
+                        TinyText("建议：${item.action}")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LearningHealthPanel(analytics: LearningAnalytics) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = techCardColors(),
+        border = techPanelBorder()
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("学习健康概览", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary, fontSize = 20.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MetricPill("未处理比例", "${analytics.unprocessedPercent}%")
+                MetricPill("重复率", "${analytics.duplicateRateNow}%")
+                MetricPill("重复变化", analytics.duplicateTrendLabel)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FolderProgressPanel(items: List<FolderProgressStat>) {
+    StatsPanel(title = "每个收藏夹复习进度") {
+        if (items.isEmpty()) {
+            TinyText("暂无收藏夹数据。")
+        } else {
+            items.forEach { item ->
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(item.name, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        TinyText("${item.reviewed}/${item.total}")
+                    }
+                    LinearProgressIndicator(
+                        progress = { item.progress.coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TagKnowledgePanel(items: List<TagKnowledgeStat>) {
+    StatsPanel(title = "每个标签知识点数量") {
+        if (items.isEmpty()) {
+            TinyText("暂无标签数据。")
+        } else {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items.forEach { item ->
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.16f))
+                    ) {
+                        Text(
+                            "${item.tag} ${item.count} · 已复习${item.reviewed}",
+                            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WeeklyTrendPanel(items: List<WeeklyTrendStat>) {
+    val maxValue = items.maxOfOrNull { maxOf(it.added, it.reviewed) }?.coerceAtLeast(1) ?: 1
+    StatsPanel(title = "本周新增 / 复习趋势") {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Bottom
+        ) {
+            items.forEach { item ->
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    TrendBar(item.reviewed, maxValue, MaterialTheme.colorScheme.secondary)
+                    TrendBar(item.added, maxValue, MaterialTheme.colorScheme.primary)
+                    Text(item.label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        TinyText("蓝色=新增，青色=复习。趋势用于答辩展示端侧统计能力。")
+    }
+}
+
+@Composable
+private fun TrendBar(value: Int, maxValue: Int, color: Color) {
+    Surface(
+        modifier = Modifier
+            .width(13.dp)
+            .height((8 + 42 * (value.toFloat() / maxValue)).dp),
+        shape = RoundedCornerShape(50),
+        color = color.copy(alpha = if (value == 0) 0.18f else 0.82f)
+    ) {}
+}
+
+@Composable
+private fun StatsPanel(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = techCardColors(),
+        border = techPanelBorder()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            content = {
+                Text(title, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary, fontSize = 18.sp)
+                content()
+            }
+        )
+    }
+}
+
+private fun currentDuplicateRate(notes: List<NoteEntity>): Float {
+    return if (notes.isEmpty()) 0f else notes.count { it.duplicateScore >= 0.72f }.toFloat() / notes.size
+}
+
+private fun percent(part: Int, total: Int): Int {
+    return if (total <= 0) 0 else ((part.toFloat() / total) * 100).toInt().coerceIn(0, 100)
+}
+
+private fun daysAgoMillis(days: Int): Long {
+    return System.currentTimeMillis() - days * 24L * 60L * 60L * 1000L
+}
+
+private fun Long.toLocalDate(): LocalDate {
+    return Instant.ofEpochMilli(this).atZone(ZoneId.systemDefault()).toLocalDate()
 }
 
 @Composable
@@ -1121,8 +1585,7 @@ fun NoteDetailScreen(
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Black,
                 color = MaterialTheme.colorScheme.primary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                lineHeight = 30.sp
             )
             IconButton(onClick = {
                 editingTitle = note.sourceTitle
@@ -1235,9 +1698,12 @@ fun NoteDetailScreen(
 @Composable
 private fun SourceMaterialCard(note: NoteEntity) {
     val context = LocalContext.current
-    val originalText = cleanOriginalText(
-        if (note.processedStatus == "PROCESSED") note.noteContent.ifBlank { note.rawText.orEmpty() }
-        else (note.rawText ?: note.noteContent).ifBlank { "暂无原文内容" }
+    val originalText = cleanOriginalText(note.rawText.orEmpty())
+    val recognizedText = cleanOriginalText(
+        listOfNotNull(
+            note.ocrText?.takeIf { it.isNotBlank() }?.let { "OCR 识别：\n$it" },
+            note.noteContent.takeIf { it.isNotBlank() && it != note.rawText }?.let { "AI 整理/图片理解：\n$it" }
+        ).joinToString("\n\n")
     )
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1247,25 +1713,40 @@ private fun SourceMaterialCard(note: NoteEntity) {
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("原文材料", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
+            Text("原始输入", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary, fontSize = 18.sp)
+            TinyText("这里保留你最初提交的图片、文本和网址；AI 摘要会单独显示在下方。")
             if (!note.url.isNullOrBlank()) {
                 SourceLine(
-                    label = "原文网址",
+                    label = "输入网址",
                     value = note.url,
                     onClick = { openUrl(context, note.url) },
-                    onLongClick = { copyText(context, "原文网址", note.url) }
+                    onLongClick = { copyText(context, "输入网址", note.url) }
                 )
             }
             if (!note.imagePath.isNullOrBlank()) {
                 ImageSection(imagePath = note.imagePath)
             }
-            SourceLine(
-                label = "原文",
-                value = originalText,
-                maxLines = 6,
-                canExpand = true,
-                onLongClick = { copyText(context, "原文", originalText) }
-            )
+            if (originalText.isNotBlank()) {
+                SourceLine(
+                    label = "输入文本",
+                    value = originalText,
+                    maxLines = 8,
+                    canExpand = true,
+                    onLongClick = { copyText(context, "输入文本", originalText) }
+                )
+            }
+            if (note.url.isNullOrBlank() && note.imagePath.isNullOrBlank() && originalText.isBlank()) {
+                TinyText("这张卡片没有保存到原始输入。")
+            }
+            if (recognizedText.isNotBlank()) {
+                SourceLine(
+                    label = "识别结果",
+                    value = recognizedText,
+                    maxLines = 8,
+                    canExpand = true,
+                    onLongClick = { copyText(context, "识别结果", recognizedText) }
+                )
+            }
         }
     }
 }
@@ -1306,7 +1787,7 @@ private fun SourceLine(
                             }
                         ),
                     maxLines = if (expanded) Int.MAX_VALUE else maxLines,
-                    overflow = TextOverflow.Ellipsis,
+                    overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
                     lineHeight = 20.sp,
                     color = if (onClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                 )
@@ -1330,9 +1811,10 @@ private fun SourceLine(
 
 @Composable
 private fun ImageSection(imagePath: String) {
-    var showPreview by remember { mutableStateOf(false) }
+    var showPreview by remember { mutableStateOf(true) }
     var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var showFullScreen by remember { mutableStateOf(false) }
+    var loadFailed by remember { mutableStateOf(false) }
     var scale by remember { mutableStateOf(1f) }
     var offsetX by remember { mutableStateOf(0f) }
     var offsetY by remember { mutableStateOf(0f) }
@@ -1343,6 +1825,9 @@ private fun ImageSection(imagePath: String) {
             val file = if (imagePath.startsWith("/")) File(imagePath) else File(context.filesDir, imagePath)
             if (file.exists()) {
                 bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+                loadFailed = bitmap == null
+            } else {
+                loadFailed = true
             }
         }
     }
@@ -1380,13 +1865,15 @@ private fun ImageSection(imagePath: String) {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("原文截图", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+        Text("输入图片", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
         if (showPreview && bitmap != null) {
+            val previewShape = RoundedCornerShape(18.dp)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(150.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .height(190.dp)
+                    .pressMicroInteraction(shape = previewShape)
+                    .clip(previewShape)
                     .clickable { showFullScreen = true }
             ) {
                 Image(
@@ -1398,6 +1885,15 @@ private fun ImageSection(imagePath: String) {
             TextButton(onClick = { showPreview = false }) {
                 Text("收起预览")
             }
+        } else if (loadFailed) {
+            SourceLine(
+                label = "图片路径",
+                value = imagePath,
+                maxLines = 2,
+                canExpand = true,
+                onLongClick = { copyText(context, "图片路径", imagePath) }
+            )
+            TinyText("图片预览失败，可能是文件已被移动或系统权限拒绝读取。长按可复制路径。")
         } else {
             OutlinedButton(
                 onClick = { showPreview = true },
@@ -1424,9 +1920,12 @@ private fun ClickableTagSection(
             SelectionContainer {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     tags.forEach { tag ->
+                        val tagShape = RoundedCornerShape(50)
                         Surface(
-                            modifier = Modifier.clickable { onSelectTag(tag) },
-                            shape = RoundedCornerShape(50),
+                            modifier = Modifier
+                                .pressMicroInteraction(shape = tagShape)
+                                .clickable { onSelectTag(tag) },
+                            shape = tagShape,
                             color = if (tag == selectedTag) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiaryContainer,
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f))
                         ) {
@@ -1462,16 +1961,18 @@ private fun TagCollectionPanel(
                 TextButton(onClick = onBack) { Text("返回") }
             }
             notes.forEach { item ->
+                val itemShape = RoundedCornerShape(16.dp)
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .pressMicroInteraction(shape = itemShape)
                         .clickable { onOpenNote(item.noteId) },
-                    shape = RoundedCornerShape(16.dp),
+                    shape = itemShape,
                     color = MaterialTheme.colorScheme.surface
                 ) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(item.sourceTitle, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(item.summary ?: item.noteContent, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 18.sp)
+                        Text(item.sourceTitle, fontWeight = FontWeight.Bold, lineHeight = 19.sp)
+                        Text(item.summary ?: item.noteContent, maxLines = 4, overflow = TextOverflow.Clip, lineHeight = 18.sp)
                     }
                 }
             }
@@ -1561,9 +2062,12 @@ private fun AiAssistantCard(
             Text("你可能想问的问题", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 questions.forEach { question ->
+                    val questionShape = RoundedCornerShape(18.dp)
                     Surface(
-                        modifier = Modifier.clickable { onAsk(question) },
-                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier
+                            .pressMicroInteraction(shape = questionShape)
+                            .clickable { onAsk(question) },
+                        shape = questionShape,
                         color = MaterialTheme.colorScheme.surface
                     ) {
                         Text(question, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), fontSize = 13.sp)
@@ -1649,8 +2153,86 @@ private fun AssistantBubble(message: AssistantMessage) {
                         lineHeight = 20.sp
                     )
                 } else {
-                    MarkdownText(message.content, modifier = Modifier.padding(13.dp))
+                    Column {
+                        MarkdownText(message.content, modifier = Modifier.padding(13.dp))
+                        if (message.sources.isNotEmpty()) {
+                            AnswerSources(message.sources)
+                        }
+                    }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnswerSources(sources: List<AnswerSource>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 13.dp, end = 13.dp, bottom = 13.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.58f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f))
+        ) {
+            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text(
+                    "回答来源",
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 12.sp
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    sources.take(5).forEach { source ->
+                        AnswerSourceCard(source)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnswerSourceCard(source: AnswerSource) {
+    val confidenceText = source.confidence?.let { " ${(it.coerceIn(0f, 1f) * 100).toInt()}%" }.orEmpty()
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
+    ) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "${source.type}$confidenceText",
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    source.title,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (source.evidence.isNotBlank()) {
+                Text(
+                    "依据：${source.evidence}",
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+                    fontSize = 11.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 15.sp
+                )
             }
         }
     }
@@ -1663,11 +2245,13 @@ private fun RelatedCardSlide(
     note: NoteEntity,
     onClick: () -> Unit
 ) {
+    val cardShape = RoundedCornerShape(22.dp)
     Card(
         modifier = Modifier
             .width(260.dp)
+            .pressMicroInteraction(shape = cardShape)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(22.dp),
+        shape = cardShape,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
     ) {
@@ -1765,14 +2349,16 @@ private fun NoteCard(
     onLongClick: () -> Unit,
     onStartReview: () -> Unit
 ) {
+    val cardShape = RoundedCornerShape(24.dp)
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .pressMicroInteraction(shape = cardShape)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
             ),
-        shape = RoundedCornerShape(24.dp),
+        shape = cardShape,
         colors = techCardColors(),
         border = techPanelBorder(),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -1824,11 +2410,13 @@ private fun ReviewCardView(card: ReviewCardEntity, noteTitle: String, onDone: ()
 
 @Composable
 private fun ResultCard(result: ScoredNote, onClick: () -> Unit) {
+    val cardShape = RoundedCornerShape(22.dp)
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .pressMicroInteraction(shape = cardShape)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(22.dp),
+        shape = cardShape,
         colors = techCardColors(),
         border = techPanelBorder(),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -1843,11 +2431,13 @@ private fun ResultCard(result: ScoredNote, onClick: () -> Unit) {
 
 @Composable
 private fun RelationCard(relation: NoteRelationEntity, note: NoteEntity, onClick: () -> Unit) {
+    val cardShape = RoundedCornerShape(22.dp)
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .pressMicroInteraction(shape = cardShape)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(22.dp),
+        shape = cardShape,
         colors = techCardColors(),
         border = techPanelBorder(),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -1966,12 +2556,12 @@ private fun MetricPill(label: String, value: String) {
 @Composable
 private fun TagRow(tags: List<String>) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        tags.take(3).forEach { tag -> StatusChip(displayTag(tag)) }
+        tags.take(5).forEach { tag -> StatusChip(displayTag(tag), maxLines = 2) }
     }
 }
 
 @Composable
-private fun StatusChip(text: String) {
+private fun StatusChip(text: String, maxLines: Int = 1) {
     Surface(
         shape = RoundedCornerShape(50),
         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
@@ -1981,15 +2571,16 @@ private fun StatusChip(text: String) {
             text,
             modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
             fontSize = 12.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            maxLines = maxLines,
+            overflow = TextOverflow.Clip,
+            lineHeight = 15.sp
         )
     }
 }
 
 private fun displayTag(tag: String): String {
     val clean = tag.trim().replace(Regex("\\s+"), "")
-    return if (clean.length > 10) "${clean.take(10)}…" else clean
+    return clean.ifBlank { "未分类" }
 }
 
 @Composable
@@ -2018,12 +2609,14 @@ private fun ProgressBar(progress: Float) {
 
 @Composable
 private fun InterventionCard(collected: Int, understood: Int, index: Int, onClick: () -> Unit) {
+    val cardShape = RoundedCornerShape(28.dp)
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .pressMicroInteraction(shape = cardShape)
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondary),
-        shape = RoundedCornerShape(28.dp)
+        shape = cardShape
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("必须处理提醒", color = Color.White, fontWeight = FontWeight.Black, fontSize = 20.sp)
@@ -2048,7 +2641,7 @@ private fun DuplicateInlineWarning(
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("你已经收藏过类似内容 $duplicateCount 次", color = Color(0xFF7A4A00), fontWeight = FontWeight.Bold)
+            Text("你已经收藏过类似内容 $duplicateCount 次", color = Color(0xFF0757B8), fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onViewExisting) { Text("查看已有笔记") }
                 Button(onClick = onStartReview) { Text("进入复习卡片") }
@@ -2073,7 +2666,7 @@ private fun DuplicateWarningCard(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.24f))
     ) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("重复收藏提示", color = Color(0xFF7A4A00), fontWeight = FontWeight.Black)
+            Text("重复收藏提示", color = Color(0xFF0757B8), fontWeight = FontWeight.Black)
             Text("你已经收藏过类似内容 $duplicateCount 次。不要继续堆材料，先看已有笔记或进入回流卡片。", lineHeight = 20.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { showRelatedList = true }) { Text("查看已有笔记") }

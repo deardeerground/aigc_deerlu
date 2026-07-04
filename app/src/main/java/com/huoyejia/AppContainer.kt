@@ -30,7 +30,7 @@ class AppContainer(context: Context) {
     private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mockBlueLM = MockBlueLMAdapter()
     // 优先走自建服务器（ServerBlueLMAdapter），失败再降级到直连大模型（RemoteBlueLMAdapter），最终降级到本地 mock
-    private val directLM = RemoteBlueLMAdapter(LlmRuntimeConfig.fromBuildConfig(), mockBlueLM)
+    private val directLM = RemoteBlueLMAdapter(context.applicationContext, LlmRuntimeConfig.fromBuildConfig(), mockBlueLM)
     val blueLM: BlueLMAdapter = ServerBlueLMAdapter(directLM)
 
     val folderRepository = FolderRepository(db.folderDao())

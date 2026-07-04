@@ -6,6 +6,7 @@ import com.huoyejia.data.local.FolderEntity
 import com.huoyejia.data.local.NoteDao
 import com.huoyejia.data.local.NoteEmbeddingEntity
 import com.huoyejia.data.local.NoteEntity
+import com.huoyejia.data.local.NoteWithEmbedding
 import com.huoyejia.data.local.NoteRelationEntity
 import com.huoyejia.data.local.RelationDao
 import com.huoyejia.data.local.ReviewCardDao
@@ -65,6 +66,10 @@ class NoteRepository(
 
     suspend fun loadWithEmbeddings(excludeNoteId: String = ""): List<NoteEntity> {
         return noteDao.loadWithEmbeddings(excludeNoteId)
+    }
+
+    suspend fun loadNotesWithEmbeddingVectors(excludeNoteId: String = ""): List<NoteWithEmbedding> {
+        return noteDao.loadNotesWithEmbeddingVectors(excludeNoteId)
     }
 }
 

@@ -39,7 +39,8 @@ data class LlmRuntimeConfig(
                 chat = LlmEndpointConfig(
                     baseUrl = BuildConfig.LLM_CHAT_BASE_URL.trim().removeSuffix("/"),
                     apiKey = BuildConfig.LLM_CHAT_API_KEY.trim(),
-                    model = BuildConfig.LLM_CHAT_MODEL.trim()
+                    model = BuildConfig.LLM_CHAT_MODEL.trim(),
+                    path = BuildConfig.LLM_CHAT_PATH.trim().ifBlank { "/chat/completions" }
                 ),
                 embedding = LlmEndpointConfig(
                     baseUrl = BuildConfig.LLM_EMBEDDING_BASE_URL.trim().removeSuffix("/"),

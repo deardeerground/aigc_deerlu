@@ -33,10 +33,16 @@ class MockBlueLMAdapter : BlueLMAdapter {
         )
     }
 
-    override suspend fun embed(text: String): FloatArray {
+    override suspend fun describeImage(imagePath: String, contextText: String): String {
+        val fileName = imagePath.substringAfterLast('/').substringAfterLast('\\').ifBlank { "本地图片" }
+        return "这是一张用户上传的学习截图或图片资料，文件名为 $fileName。当前未接入远程视觉理解时，只能根据 OCR 和用户补充文本整理；接入多模态模型后会自动识别画面主体、文字、结构和可复习知识点。"
+    }
+
+    override suspend fun embed(text: String, imagePath: String?): FloatArray {
         val vector = FloatArray(48)
+        val imageHint = imagePath?.takeIf { it.isNotBlank() }?.let { " 图片 截图 视觉资料 ${it.substringAfterLast('/').substringAfterLast('\\')}" }.orEmpty()
         val tokens = Regex("[\\u4E00-\\u9FA5A-Za-z0-9]+")
-            .findAll(text.lowercase())
+            .findAll((text + imageHint).lowercase())
             .flatMap { match -> expandToken(match.value) }
         tokens.forEach { token ->
             val index = abs(token.hashCode()) % vector.size

@@ -238,9 +238,11 @@ fun CollectionListScreen(
                 // 收藏夹列表
                 items(filteredFolders, key = { it.folderId }) { folder ->
                     val noteCount = notes.count { it.folderId == folder.folderId }
+                    val folderShape = CardDefaults.shape
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .pressMicroInteraction(shape = folderShape)
                             .combinedClickable(
                                 onClick = { navController.navigate("collection_detail/${folder.folderId}") },
                                 onLongClick = {
@@ -251,6 +253,7 @@ fun CollectionListScreen(
                     ) {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
+                            shape = folderShape,
                             colors = CardDefaults.cardColors(
                                 containerColor = Color.White.copy(alpha = 0.90f)
                             ),
@@ -290,10 +293,12 @@ fun CollectionListScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         items(folderNotes, key = { it.noteId }) { note ->
+                                            val noteShape = RoundedCornerShape(10.dp)
                                             Surface(
-                                                shape = RoundedCornerShape(10.dp),
+                                                shape = noteShape,
                                                 color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
                                                 modifier = Modifier
+                                                    .pressMicroInteraction(shape = noteShape)
                                                     .combinedClickable(
                                                         onClick = { navController.navigate("detail/${note.noteId}") },
                                                         onLongClick = {
@@ -353,8 +358,12 @@ fun CollectionListScreen(
 
                 // 底部新建收藏夹按钮
                 item {
+                    val createShape = CardDefaults.shape
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .pressMicroInteraction(shape = createShape),
+                        shape = createShape,
                         colors = CardDefaults.cardColors(
                             containerColor = Color.White.copy(alpha = 0.84f)
                         ),

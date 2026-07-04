@@ -2,6 +2,7 @@ package com.huoyejia.domain
 
 import com.huoyejia.ai.BlueLMAdapter
 import com.huoyejia.data.NoteRepository
+import com.huoyejia.util.VectorCodec
 
 class SearchService(
     private val noteRepository: NoteRepository,
@@ -14,8 +15,11 @@ class SearchService(
         val imageOnly = query.contains("截图") || query.contains("图片") || query.contains("照片")
         val unreviewedOnly = query.contains("没复习") || query.contains("未复习") || query.contains("还没复习")
 
-        return noteRepository.loadWithEmbeddings()
-            .map { note ->
+        return noteRepository.loadNotesWithEmbeddingVectors()
+            .map { item ->
+                val note = item.note
+                val vectorScore = ((VectorCodec.cosine(queryVector, VectorCodec.decode(item.vectorBlob)) + 1f) / 2f)
+                    .coerceIn(0f, 1f)
                 val text = "${note.sourceTitle} ${note.noteContent} ${note.topic.orEmpty()} ${note.tags}"
                 val keywordScore = if (keywords.isEmpty()) 0f else {
                     keywords.count { text.contains(it, ignoreCase = true) }.toFloat() / keywords.size
@@ -23,10 +27,10 @@ class SearchService(
                 val metaScore = buildMetaScore(note.sourceType, note.reviewedCount, imageOnly, unreviewedOnly)
                 ScoredNote(
                     note = note,
-                    vectorScore = 0f,
+                    vectorScore = vectorScore,
                     keywordScore = keywordScore,
                     metaScore = metaScore,
-                    finalScore = 0.25f * keywordScore + 0.20f * metaScore
+                    finalScore = 0.55f * vectorScore + 0.25f * keywordScore + 0.20f * metaScore
                 )
             }
             .filter {

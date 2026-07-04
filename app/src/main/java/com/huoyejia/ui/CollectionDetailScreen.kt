@@ -329,10 +329,12 @@ internal fun CollectionCardItem(
     onClick: () -> Unit,
     onManage: () -> Unit = {}
 ) {
+    val cardShape = CardDefaults.shape
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(100.dp)
+            .pressMicroInteraction(shape = cardShape)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onManage
@@ -340,6 +342,7 @@ internal fun CollectionCardItem(
     ) {
         Card(
             modifier = Modifier.fillMaxWidth(),
+            shape = cardShape,
             colors = CardDefaults.cardColors(
                 containerColor = Color.White.copy(alpha = 0.90f)
             ),
@@ -406,11 +409,13 @@ private fun FolderMoveRow(
     selected: Boolean,
     onClick: () -> Unit
 ) {
+    val rowShape = RoundedCornerShape(14.dp)
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .pressMicroInteraction(shape = rowShape)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(14.dp),
+        shape = rowShape,
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = if (selected) 0.36f else 0.12f))
     ) {

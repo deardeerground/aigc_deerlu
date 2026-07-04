@@ -49,14 +49,20 @@ class ServerBlueLMAdapter(
         }, { fallback.enrichNote(noteContent, maxSimilarity) })
     }
 
-    override suspend fun embed(text: String): FloatArray {
+    override suspend fun describeImage(imagePath: String, contextText: String): String {
+        // 当前后端版本还没有图片理解接口，先交给直连多模态模型或本地 mock 兜底。
+        return fallback.describeImage(imagePath, contextText)
+    }
+
+    override suspend fun embed(text: String, imagePath: String?): FloatArray {
         return runServerOrFallback({
             val json = postJson("/api/embed", JSONObject().apply {
                 put("text", text)
+                if (!imagePath.isNullOrBlank()) put("image_path", imagePath)
             })
             val arr = json.getJSONArray("embedding")
             FloatArray(arr.length()) { arr.getDouble(it).toFloat() }
-        }, { fallback.embed(text) })
+        }, { fallback.embed(text, imagePath) })
     }
 
     override suspend fun classifyRelation(a: NoteEntity, b: NoteEntity, similarity: Float): RelationAiResult? {

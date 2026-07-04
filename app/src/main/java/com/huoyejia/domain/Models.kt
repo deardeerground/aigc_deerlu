@@ -88,7 +88,15 @@ data class ExplainUiState(
 data class AssistantMessage(
     val role: String,
     val content: String,
+    val sources: List<AnswerSource> = emptyList(),
     val createdAt: Long = System.currentTimeMillis()
+)
+
+data class AnswerSource(
+    val title: String,
+    val type: String,
+    val confidence: Float? = null,
+    val evidence: String = ""
 )
 
 data class CardAssistantState(

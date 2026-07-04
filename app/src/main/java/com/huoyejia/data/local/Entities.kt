@@ -95,6 +95,13 @@ data class NoteEmbeddingEntity(
     val updatedAt: Long
 )
 
+data class NoteWithEmbedding(
+    @androidx.room.Embedded
+    val note: NoteEntity,
+    @ColumnInfo(name = "vector_blob")
+    val vectorBlob: ByteArray
+)
+
 @Entity(
     tableName = "note_relations",
     indices = [

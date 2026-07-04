@@ -93,17 +93,11 @@ class NoteProcessor(
             updateProgress(noteId, note.sourceTitle, ProcessingStage.READ_SOURCE, 0.12f, "准备读取素材")
             noteRepository.updateProcessedStatus(noteId, "PROCESSING")
             updateProgress(noteId, note.sourceTitle, ProcessingStage.READ_SOURCE, 0.22f, "正在读取截图和网页内容")
-            val ocrText = recognizeImageText(note)
-            val webText = extractWebText(note.url)
-            val content = normalizeContent(note.rawText.orEmpty(), ocrText, webText)
-                .ifBlank { note.sourceTitle }
+            val material = buildLearningMaterial(note, note.sourceTitle)
+            val content = material.content
             updateProgress(noteId, note.sourceTitle, ProcessingStage.UNDERSTAND, 0.42f, "正在理解内容")
-            val vector = blueLM.embed(content)
-            val historical = noteRepository.loadWithEmbeddings(noteId)
-                .filter { it.noteId != noteId }
-            val ranked = historical.take(10).map {
-                RelatedNote(it, "similar", 0.5f)
-            }.sortedByDescending { it.confidence }
+            val vector = blueLM.embed(content, note.imagePath)
+            val ranked = rankRelatedNotes(noteId, vector)
 
             val maxSimilarity = ranked.firstOrNull()?.confidence ?: 0f
             updateProgress(noteId, note.sourceTitle, ProcessingStage.UNDERSTAND, 0.62f, "正在生成摘要和标签")
@@ -113,7 +107,7 @@ class NoteProcessor(
                 return@withContext
             }
             val enriched = note.copy(
-                ocrText = ocrText.ifBlank { null },
+                ocrText = material.ocrText.ifBlank { null },
                 noteContent = content,
                 summary = ai.summary,
                 tags = JsonText.encodeList(sanitizeTags(ai.tags, ai.topic)),
@@ -131,7 +125,7 @@ class NoteProcessor(
             noteRepository.saveEmbedding(
                 NoteEmbeddingEntity(
                     noteId = noteId,
-                    modelName = "mock-bluelm-embedding",
+                    modelName = "multimodal-embedding",
                     vectorDim = vector.size,
                     vectorBlob = VectorCodec.encode(vector),
                     updatedAt = System.currentTimeMillis()
@@ -224,6 +218,18 @@ class NoteProcessor(
         )
     }
 
+    private suspend fun rankRelatedNotes(noteId: String, vector: FloatArray): List<RelatedNote> {
+        return noteRepository.loadNotesWithEmbeddingVectors(noteId)
+            .map { item ->
+                val similarity = ((VectorCodec.cosine(vector, VectorCodec.decode(item.vectorBlob)) + 1f) / 2f)
+                    .coerceIn(0f, 1f)
+                RelatedNote(item.note, "similar", similarity)
+            }
+            .filter { it.confidence >= 0.18f }
+            .sortedByDescending { it.confidence }
+            .take(10)
+    }
+
     private suspend fun recognizeImageText(note: NoteEntity): String {
         val imagePath = note.imagePath?.takeIf { it.isNotBlank() } ?: return ""
         val image = runCatching {
@@ -257,17 +263,11 @@ class NoteProcessor(
             relationRepository.deleteForNote(noteId)
             reviewCardRepository.deleteForNote(noteId)
             updateProgress(noteId, note.sourceTitle, ProcessingStage.READ_SOURCE, 0.22f, "正在读取截图和网页内容")
-            val ocrText = recognizeImageText(note)
-            val webText = extractWebText(note.url)
-            val content = normalizeContent(note.rawText.orEmpty(), ocrText, webText)
-                .ifBlank { note.sourceTitle }
+            val material = buildLearningMaterial(note, note.sourceTitle)
+            val content = material.content
             updateProgress(noteId, note.sourceTitle, ProcessingStage.UNDERSTAND, 0.42f, "正在理解内容")
-            val vector = blueLM.embed(content)
-            val historical = noteRepository.loadWithEmbeddings(noteId)
-                .filter { it.noteId != noteId }
-            val ranked = historical.take(10).map {
-                RelatedNote(it, "similar", 0.5f)
-            }.sortedByDescending { it.confidence }
+            val vector = blueLM.embed(content, note.imagePath)
+            val ranked = rankRelatedNotes(noteId, vector)
 
             val maxSimilarity = ranked.firstOrNull()?.confidence ?: 0f
             updateProgress(noteId, note.sourceTitle, ProcessingStage.UNDERSTAND, 0.62f, "正在生成摘要和标签")
@@ -277,7 +277,7 @@ class NoteProcessor(
                 return@withContext
             }
             val enriched = note.copy(
-                ocrText = ocrText.ifBlank { null },
+                ocrText = material.ocrText.ifBlank { null },
                 noteContent = content,
                 summary = ai.summary,
                 tags = JsonText.encodeList(sanitizeTags(ai.tags, ai.topic)),
@@ -295,7 +295,7 @@ class NoteProcessor(
             noteRepository.saveEmbedding(
                 NoteEmbeddingEntity(
                     noteId = noteId,
-                    modelName = "mock-bluelm-embedding",
+                    modelName = "multimodal-embedding",
                     vectorDim = vector.size,
                     vectorBlob = VectorCodec.encode(vector),
                     updatedAt = System.currentTimeMillis()
@@ -348,6 +348,24 @@ class NoteProcessor(
         return webContentExtractor.extract(target).toAiText()
     }
 
+    private suspend fun buildLearningMaterial(note: NoteEntity, fallbackTitle: String): LearningMaterial {
+        val ocrText = recognizeImageText(note)
+        val webText = extractWebText(note.url)
+        val baseContent = normalizeContent(note.rawText.orEmpty(), ocrText, webText)
+        val imageDescription = if (note.imagePath.hasLocalImage() && baseContent.length < 80) {
+            blueLM.describeImage(note.imagePath.orEmpty(), baseContent)
+        } else {
+            ""
+        }
+        val content = normalizeContent(baseContent, imageDescription, "")
+            .ifBlank { fallbackTitle }
+        return LearningMaterial(
+            content = content,
+            ocrText = ocrText,
+            imageDescription = imageDescription
+        )
+    }
+
     private fun normalizeContent(raw: String, ocr: String, web: String): String {
         return listOf(
             raw,
@@ -360,6 +378,14 @@ class NoteProcessor(
             .replace(Regex("\\s{2,}"), " ")
             .trim()
     }
+
+    private fun String?.hasLocalImage(): Boolean = !isNullOrBlank()
+
+    private data class LearningMaterial(
+        val content: String,
+        val ocrText: String,
+        val imageDescription: String
+    )
 
     private fun sanitizeTags(tags: List<String>, topic: String): List<String> {
         val cleaned = (tags + topic)

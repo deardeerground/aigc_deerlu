@@ -9,43 +9,43 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 
 private val LightColors = lightColorScheme(
-    primary = Color(0xFF106FEA),
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFDDF3FF),
-    onPrimaryContainer = Color(0xFF06275C),
-    secondary = Color(0xFF072B47),
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFE2F7FF),
-    onSecondaryContainer = Color(0xFF05233A),
-    tertiary = Color(0xFF00A7B7),
-    tertiaryContainer = Color(0xFFDFFBF4),
-    onTertiaryContainer = Color(0xFF003D43),
-    background = Color(0xFFF6FCFF),
-    surface = Color(0xFFFFFFFF),
-    surfaceVariant = Color(0xFFE8F6FF),
-    onSurface = Color(0xFF10223D),
-    onSurfaceVariant = Color(0xFF536781),
-    outline = Color(0xFFB8D3F4),
-    error = Color(0xFFE5486D),
-    errorContainer = Color(0xFFFFE7EE),
-    onErrorContainer = Color(0xFF5F1027),
-    inverseSurface = Color(0xFF1C2640),
-    inverseOnSurface = Color(0xFFF5F8FF)
+    primary = Color(0xFF1976FF),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFDCEBFF),
+    onPrimaryContainer = Color(0xFF062A63),
+    secondary = Color(0xFF00A7D8),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFD7F5FF),
+    onSecondaryContainer = Color(0xFF003344),
+    tertiary = Color(0xFF5B6CFF),
+    tertiaryContainer = Color(0xFFE3E6FF),
+    onTertiaryContainer = Color(0xFF10195D),
+    background = Color(0xFFF4F9FF),
+    surface = Color(0xF2FFFFFF),
+    surfaceVariant = Color(0xFFE7F1FF),
+    onSurface = Color(0xFF10233F),
+    onSurfaceVariant = Color(0xFF5B6D86),
+    outline = Color(0xFFB8D5F8),
+    error = Color(0xFFD64545),
+    errorContainer = Color(0xFFFFE1E1),
+    onErrorContainer = Color(0xFF641212),
+    inverseSurface = Color(0xFF10233F),
+    inverseOnSurface = Color(0xFFF4F9FF)
 )
 
-private val TechShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(30.dp)
+private val GlassShapes = Shapes(
+    extraSmall = RoundedCornerShape(10.dp),
+    small = RoundedCornerShape(16.dp),
+    medium = RoundedCornerShape(22.dp),
+    large = RoundedCornerShape(30.dp),
+    extraLarge = RoundedCornerShape(38.dp)
 )
 
 @Composable
 fun HuoyejiaTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = LightColors,
-        shapes = TechShapes,
+        shapes = GlassShapes,
         typography = MaterialTheme.typography,
         content = content
     )

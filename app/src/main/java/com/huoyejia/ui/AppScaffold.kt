@@ -3,6 +3,7 @@ package com.huoyejia.ui
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -53,24 +55,33 @@ fun HuoyejiaScaffold(
 
     // 获取导航图的起始路由（应该是"collections"）
     val startDestination = "collections"
+    fun navigateToMainTab(route: String) {
+        if (current != route) {
+            navController.navigate(route) {
+                launchSingleTop = true
+                popUpTo(startDestination) { saveState = false }
+                restoreState = false
+            }
+        }
+    }
 
 
     Scaffold(
         containerColor = Color.Transparent,
         bottomBar = {
             NavigationBar(
-                containerColor = Color.White.copy(alpha = 0.88f),
+                containerColor = Color(0xF2FFFFFF).copy(alpha = 0.78f),
                 tonalElevation = 0.dp,
                 modifier = Modifier
                     .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
                     .background(
                         Brush.verticalGradient(
-                            listOf(Color.White.copy(alpha = 0.96f), Color(0xFFEAF8FF).copy(alpha = 0.90f))
+                            listOf(Color(0xFFFFFFFF).copy(alpha = 0.88f), Color(0xFFE9F5FF).copy(alpha = 0.78f))
                         )
                     )
                     .border(
                         width = 1.dp,
-                        color = Color(0xFFB9D9FF).copy(alpha = 0.78f),
+                        color = Color(0xFF9DCAFF).copy(alpha = 0.82f),
                         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
                     )
             ) {
@@ -78,16 +89,7 @@ fun HuoyejiaScaffold(
                     val selected = current == tab.route
                     NavigationBarItem(
                         selected = selected,
-                        onClick = {
-                            if (current != tab.route) {
-                                navController.navigate(tab.route) {
-                                    launchSingleTop = true
-                                    // 弹出到起始页面，确保每次点击都从根状态开始
-                                    popUpTo(startDestination) { saveState = false }
-                                    restoreState = false
-                                }
-                            }
-                        },
+                        onClick = { navigateToMainTab(tab.route) },
                         icon = { NavSymbol(symbol = tab.symbol, selected = selected) },
                         label = { Text(tab.label) },
                         colors = NavigationBarItemDefaults.colors(
@@ -108,6 +110,20 @@ fun HuoyejiaScaffold(
                 .fillMaxSize()
                 .padding(padding)
                 .background(MaterialTheme.colorScheme.background)
+                .pointerInput(current) {
+                    var dragAmount = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { dragAmount = 0f },
+                        onHorizontalDrag = { _, amount -> dragAmount += amount },
+                        onDragEnd = {
+                            val currentIndex = tabs.indexOfFirst { it.route == current }
+                            if (currentIndex >= 0 && kotlin.math.abs(dragAmount) > 90f) {
+                                val nextIndex = if (dragAmount < 0) currentIndex + 1 else currentIndex - 1
+                                tabs.getOrNull(nextIndex)?.let { navigateToMainTab(it.route) }
+                            }
+                        }
+                    )
+                }
         ) {
             content(PaddingValues(0.dp))
             if (isBusy) {
@@ -137,18 +153,20 @@ private fun NavSymbol(symbol: String, selected: Boolean) {
         label = "nav-symbol-scale"
     )
     val background = if (selected) {
-        Brush.linearGradient(listOf(Color(0xFF00D7FF), Color(0xFF1769E8)))
+        Brush.linearGradient(listOf(Color(0xFF4FC3FF), Color(0xFF1976FF)))
     } else {
-        Brush.linearGradient(listOf(Color.White.copy(alpha = 0.86f), Color(0xFFEAF4FF).copy(alpha = 0.72f)))
+        Brush.linearGradient(listOf(Color(0xFFFFFFFF).copy(alpha = 0.88f), Color(0xFFE6F3FF).copy(alpha = 0.72f)))
     }
+    val navShape = RoundedCornerShape(12.dp)
     Surface(
         modifier = Modifier
             .size(30.dp)
+            .pressMicroInteraction(shape = navShape)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             },
-        shape = RoundedCornerShape(12.dp),
+        shape = navShape,
         color = Color.Transparent
     ) {
         Box(

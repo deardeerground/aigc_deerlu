@@ -47,6 +47,7 @@ android {
         buildConfigField("String", "LLM_BASE_URL", "\"${readConfig("LLM_BASE_URL").gradleEscaped()}\"")
         buildConfigField("String", "LLM_API_KEY", "\"${readConfig("LLM_API_KEY").gradleEscaped()}\"")
         buildConfigField("String", "LLM_CHAT_MODEL", "\"${readConfig("LLM_CHAT_MODEL").ifBlank { "gpt-4.1-mini" }.gradleEscaped()}\"")
+        buildConfigField("String", "LLM_CHAT_PATH", "\"${readConfig("LLM_CHAT_PATH").ifBlank { "/chat/completions" }.gradleEscaped()}\"")
         buildConfigField("String", "LLM_EMBEDDING_MODEL", "\"${readConfig("LLM_EMBEDDING_MODEL").ifBlank { "text-embedding-3-small" }.gradleEscaped()}\"")
         buildConfigField("String", "LLM_CHAT_BASE_URL", "\"${readConfig("LLM_CHAT_BASE_URL", "LLM_BASE_URL").gradleEscaped()}\"")
         buildConfigField("String", "LLM_CHAT_API_KEY", "\"${readConfig("LLM_CHAT_API_KEY", "LLM_API_KEY").gradleEscaped()}\"")

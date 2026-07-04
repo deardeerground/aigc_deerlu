@@ -16,6 +16,7 @@ import com.huoyejia.service.ReminderTime
 import com.huoyejia.service.DailyReviewAlarm
 import com.huoyejia.domain.CardAssistantState
 import com.huoyejia.domain.AssistantMessage
+import com.huoyejia.domain.AnswerSource
  import com.huoyejia.domain.ExplainUiState
  import com.huoyejia.domain.ExplainPack
 import com.huoyejia.domain.NoteProcessingProgress
@@ -508,12 +509,52 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
             }
             _cardAssistantState.value = if (answer.isSuccess) {
                 val answerText = answer.getOrNull().orEmpty()
+                val sources = buildList {
+                    add(
+                        AnswerSource(
+                            title = current.sourceTitle,
+                            type = "当前卡片",
+                            confidence = 1f,
+                            evidence = buildSourceEvidence(current)
+                        )
+                    )
+                    if (!current.url.isNullOrBlank()) {
+                        add(
+                            AnswerSource(
+                                title = current.url,
+                                type = "原始网址",
+                                confidence = 0.92f,
+                                evidence = "本回答优先使用当前卡片保存的网址、网页正文或网址线索。"
+                            )
+                        )
+                    }
+                    if (!current.ocrText.isNullOrBlank() || !current.imagePath.isNullOrBlank()) {
+                        add(
+                            AnswerSource(
+                                title = current.sourceTitle,
+                                type = "截图/OCR",
+                                confidence = 0.86f,
+                                evidence = current.ocrText?.take(90) ?: "当前卡片包含原始截图，AI 整理时已纳入图片/OCR 信息。"
+                            )
+                        )
+                    }
+                    related.forEachIndexed { index, note ->
+                        add(
+                            AnswerSource(
+                                title = note.sourceTitle,
+                                type = "关联卡片",
+                                confidence = (0.88f - index * 0.08f).coerceAtLeast(0.48f),
+                                evidence = buildSourceEvidence(note)
+                            )
+                        )
+                    }
+                }
                 _cardAssistantState.value.copy(
                     noteId = noteId,
                     isAsking = false,
                     question = cleanQuestion,
                     answer = answerText,
-                    messages = (askingMessages + AssistantMessage("assistant", answerText)).takeLast(12),
+                    messages = (askingMessages + AssistantMessage("assistant", answerText, sources = sources)).takeLast(12),
                     errorMessage = null
                 )
             } else {
@@ -526,6 +567,18 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
                 )
             }
         }
+    }
+
+    private fun buildSourceEvidence(note: NoteEntity): String {
+        return listOfNotNull(
+            note.summary?.takeIf { it.isNotBlank() },
+            note.ocrText?.takeIf { it.isNotBlank() },
+            note.rawText?.takeIf { it.isNotBlank() },
+            note.noteContent.takeIf { it.isNotBlank() }
+        ).firstOrNull()
+            ?.replace(Regex("\\s+"), " ")
+            ?.take(120)
+            ?: "来自卡片标题、标签、主题和已保存的学习内容。"
     }
 
     private suspend fun ensureExplainPack(noteId: String): ExplainPack? {

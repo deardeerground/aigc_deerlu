@@ -237,7 +237,13 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         composable("dashboard") {
-                            DashboardScreen(stats = stats, notes = notes, cards = cards)
+                            DashboardScreen(
+                                stats = stats,
+                                notes = notes,
+                                cards = cards,
+                                folders = folders,
+                                relations = relations
+                            )
                         }
                         composable("settings") {
                             SettingsScreen(viewModel = viewModel, onBack = {

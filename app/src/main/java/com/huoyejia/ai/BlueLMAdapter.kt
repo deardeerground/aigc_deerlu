@@ -11,7 +11,8 @@ interface BlueLMAdapter {
     val remoteReady: Boolean
 
     suspend fun enrichNote(noteContent: String, maxSimilarity: Float): NoteAiResult
-    suspend fun embed(text: String): FloatArray
+    suspend fun describeImage(imagePath: String, contextText: String = ""): String
+    suspend fun embed(text: String, imagePath: String? = null): FloatArray
     suspend fun classifyRelation(a: NoteEntity, b: NoteEntity, similarity: Float): RelationAiResult?
     suspend fun generateReviewCard(current: NoteEntity, related: List<NoteEntity>, relationHint: String): ReviewCardDraft
     suspend fun generateExplainPack(current: NoteEntity, related: List<NoteEntity>): ExplainPack

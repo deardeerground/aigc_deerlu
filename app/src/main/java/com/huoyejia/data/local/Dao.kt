@@ -74,6 +74,15 @@ interface NoteDao {
     )
     suspend fun loadWithEmbeddings(excludeNoteId: String): List<NoteEntity>
 
+    @Query(
+        """
+        SELECT notes.*, note_embeddings.vector_blob AS vector_blob
+        FROM notes INNER JOIN note_embeddings ON notes.note_id = note_embeddings.note_id
+        WHERE notes.note_id != :excludeNoteId
+        """
+    )
+    suspend fun loadNotesWithEmbeddingVectors(excludeNoteId: String): List<NoteWithEmbedding>
+
     @Query("SELECT * FROM notes WHERE folder_id = :folderId ORDER BY created_at DESC")
     fun observeNotesByFolder(folderId: String): Flow<List<NoteEntity>>
 

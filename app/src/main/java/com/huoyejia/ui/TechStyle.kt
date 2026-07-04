@@ -28,15 +28,15 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 
 val TechPrimaryGradient = Brush.horizontalGradient(
-    listOf(Color(0xFF00D7FF), Color(0xFF1769E8), Color(0xFF09224D))
+    listOf(Color(0xFF3DBBFF), Color(0xFF1976FF), Color(0xFF5B6CFF))
 )
 
 val TechPanelGradient = Brush.linearGradient(
-    listOf(Color(0xFFF8FCFF), Color(0xFFEAF5FF), Color(0xFFF1FBFF))
+    listOf(Color(0xF2FFFFFF), Color(0xDDF2F8FF), Color(0xCCE6F3FF))
 )
 
 val TechDeepPanelGradient = Brush.linearGradient(
-    listOf(Color(0xFFE5F8FF), Color(0xFFEAF1FF), Color(0xFFE8FFF7))
+    listOf(Color(0xFFEAF5FF), Color(0xFFD8ECFF), Color(0xFFE7E9FF))
 )
 
 @Composable
@@ -45,7 +45,7 @@ fun TechBackground(
     animated: Boolean = true,
     content: @Composable BoxScope.() -> Unit
 ) {
-    val transition = rememberInfiniteTransition(label = "tech-bg")
+    val transition = rememberInfiniteTransition(label = "glass-bg")
     val drift by transition.animateFloat(
         initialValue = -18f,
         targetValue = 18f,
@@ -53,7 +53,7 @@ fun TechBackground(
             animation = tween(6200),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "tech-bg-drift"
+        label = "glass-bg-drift"
     )
     val softDrift = if (animated) drift.dp else 0.dp
 
@@ -62,38 +62,31 @@ fun TechBackground(
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    listOf(Color(0xFFF6FCFF), Color(0xFFFFFFFF), Color(0xFFEAF8FF))
+                    listOf(Color(0xFFF6FBFF), Color(0xFFEAF5FF), Color(0xFFF8FCFF))
                 )
             )
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val gridColor = Color(0xFF6CB9FF).copy(alpha = 0.08f)
-            val step = 42.dp.toPx()
+            val gridColor = Color(0xFF1976FF).copy(alpha = 0.055f)
+            val scanColor = Color(0xFF00A7D8).copy(alpha = 0.060f)
             var x = 0f
             while (x <= size.width) {
-                drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(x, 0f), end = androidx.compose.ui.geometry.Offset(x, size.height), strokeWidth = 1f)
-                x += step
+                drawLine(gridColor, androidx.compose.ui.geometry.Offset(x, 0f), androidx.compose.ui.geometry.Offset(x, size.height), strokeWidth = 1.dp.toPx())
+                x += 34.dp.toPx()
             }
             var y = 0f
             while (y <= size.height) {
-                drawLine(gridColor, start = androidx.compose.ui.geometry.Offset(0f, y), end = androidx.compose.ui.geometry.Offset(size.width, y), strokeWidth = 1f)
-                y += step
+                drawLine(gridColor, androidx.compose.ui.geometry.Offset(0f, y), androidx.compose.ui.geometry.Offset(size.width, y), strokeWidth = 1.dp.toPx())
+                y += 34.dp.toPx()
             }
-            val path = Path().apply {
-                moveTo(size.width * 0.08f, size.height * 0.22f)
-                lineTo(size.width * 0.28f, size.height * 0.18f)
-                lineTo(size.width * 0.46f, size.height * 0.30f)
-                lineTo(size.width * 0.74f, size.height * 0.24f)
-            }
-            drawPath(path, Color(0xFF00BFEF).copy(alpha = 0.13f), style = Stroke(width = 2.dp.toPx()))
-            listOf(
-                size.width * 0.08f to size.height * 0.22f,
-                size.width * 0.28f to size.height * 0.18f,
-                size.width * 0.46f to size.height * 0.30f,
-                size.width * 0.74f to size.height * 0.24f
-            ).forEach { (nodeX, nodeY) ->
-                drawCircle(Color.White.copy(alpha = 0.8f), radius = 6.dp.toPx(), center = androidx.compose.ui.geometry.Offset(nodeX, nodeY))
-                drawCircle(Color(0xFF00BFEF).copy(alpha = 0.26f), radius = 10.dp.toPx(), center = androidx.compose.ui.geometry.Offset(nodeX, nodeY), style = Stroke(width = 1.dp.toPx()))
+            var scanY = -size.height * 0.2f
+            while (scanY <= size.height * 1.2f) {
+                val path = Path().apply {
+                    moveTo(-size.width * 0.1f, scanY)
+                    cubicTo(size.width * 0.22f, scanY + 30.dp.toPx(), size.width * 0.46f, scanY - 18.dp.toPx(), size.width * 1.1f, scanY + 14.dp.toPx())
+                }
+                drawPath(path, scanColor, style = Stroke(width = 1.2.dp.toPx()))
+                scanY += 76.dp.toPx()
             }
         }
         Box(
@@ -104,7 +97,7 @@ fun TechBackground(
                 .blur(34.dp)
                 .background(
                     Brush.radialGradient(
-                        listOf(Color(0xFF73FFF4).copy(alpha = 0.58f), Color.Transparent)
+                        listOf(Color(0xFF7FD8FF).copy(alpha = 0.58f), Color.Transparent)
                     )
                 )
         )
@@ -116,7 +109,7 @@ fun TechBackground(
                 .blur(42.dp)
                 .background(
                     Brush.radialGradient(
-                        listOf(Color(0xFFB7D9FF).copy(alpha = 0.66f), Color.Transparent)
+                        listOf(Color(0xFF6D7BFF).copy(alpha = 0.32f), Color.Transparent)
                     )
                 )
         )
@@ -128,7 +121,7 @@ fun TechBackground(
                 .blur(48.dp)
                 .background(
                     Brush.radialGradient(
-                        listOf(Color(0xFFC8FFE8).copy(alpha = 0.62f), Color.Transparent)
+                        listOf(Color(0xFF9BE7FF).copy(alpha = 0.46f), Color.Transparent)
                     )
                 )
         )
@@ -138,10 +131,10 @@ fun TechBackground(
 
 @Composable
 fun techCardColors() = CardDefaults.cardColors(
-    containerColor = Color.White.copy(alpha = 0.88f)
+    containerColor = Color(0xF2FFFFFF).copy(alpha = 0.78f)
 )
 
 fun techPanelBorder(alpha: Float = 0.82f) = BorderStroke(
     width = 1.dp,
-    color = Color(0xFFB9D9FF).copy(alpha = alpha)
+    color = Color(0xFF9DCAFF).copy(alpha = alpha)
 )

@@ -1,3 +1,4 @@
+import math
 from datetime import date
 
 from fastapi import APIRouter, Depends
@@ -62,21 +63,38 @@ def _calc_hoarding(total: int, read: int, reviewed: int, dup: float, unproc: flo
         return 0, "暂无囤积，保持输入与理解平衡。"
     unread = max(total - read, 0) / total
     unreviewed = max(total - reviewed, 0) / total
-    collect_pressure = min(total / 5.0, 1.0)
-    score = 100.0 * (
-        0.20 * collect_pressure +
-        0.25 * unread +
-        0.25 * unreviewed +
-        0.15 * min(dup, 1.0) +
-        0.15 * min(unproc, 1.0)
-    )
+    collect_pressure = min(max(math.log(total + 1) / math.log(16), 0.0), 1.0)
+    delay = min(max(unproc * min(max(total / 8.0, 0.35), 1.0), 0.0), 1.0)
+    factors = [
+        ("采集压力", collect_pressure, 0.16),
+        ("未读衰减", min(max(unread, 0.0), 1.0), 0.18),
+        ("回流缺口", min(max(unreviewed, 0.0), 1.0), 0.26),
+        ("重复收藏", min(max(dup, 0.0), 1.0), 0.16),
+        ("处理延迟", delay, 0.12),
+        ("未处理率", min(max(unproc, 0.0), 1.0), 0.12),
+    ]
+    weighted = _dynamic_weights(factors)
+    score = 100.0 * sum(value * weight for name, value, weight in weighted)
     idx = min(int(score), 100)
+    top = "、".join(
+        f"{name}{int(value * 100)}%"
+        for name, value, weight in sorted(weighted, key=lambda item: item[1] * item[2], reverse=True)[:3]
+    )
     if idx >= 80:
-        reason = "高囤积预警：收藏远超消化，建议先处理重复内容并完成今日回流卡。"
+        reason = f"高囤积预警：多因子指数={idx}，主要压力来自{top}。建议暂停新增，先清重复并完成今日回流卡。"
     elif idx >= 60:
-        reason = "中度囤积：输入活跃但复习不足，优先处理高重要度未复习内容。"
+        reason = f"中度囤积：多因子指数={idx}，主要压力来自{top}。优先处理高重要度未复习内容。"
     elif idx >= 40:
-        reason = "轻度囤积：整体可控，建议坚持收藏后24小时内回流。"
+        reason = f"轻度囤积：多因子指数={idx}，主要压力来自{top}。建议坚持收藏后24小时内回流。"
     else:
-        reason = "健康状态：收藏正在转化为可复习知识。"
+        reason = f"健康状态：多因子指数={idx}，收藏正在转化为可复习知识。"
     return idx, reason
+
+
+def _dynamic_weights(factors: list[tuple[str, float, float]]) -> list[tuple[str, float, float]]:
+    adjusted = []
+    for name, value, base in factors:
+        lift = 0.72 + 0.56 * min(max(value, 0.0), 1.0)
+        adjusted.append((name, value, base * lift))
+    total = max(sum(weight for _, _, weight in adjusted), 0.0001)
+    return [(name, value, weight / total) for name, value, weight in adjusted]

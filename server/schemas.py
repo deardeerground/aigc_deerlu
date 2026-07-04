@@ -137,6 +137,21 @@ class ProcessingProgress(BaseModel):
     failed: bool = False
 
 
+class UrlExtractRequest(BaseModel):
+    url: str
+
+
+class UrlExtractResponse(BaseModel):
+    input_url: str
+    final_url: str
+    title: str | None = None
+    text: str = ""
+    excerpt: str | None = None
+    status: str
+    failure_reason: str | None = None
+    ai_text: str = ""
+
+
 class SearchResult(BaseModel):
     note_id: str
     source_title: str

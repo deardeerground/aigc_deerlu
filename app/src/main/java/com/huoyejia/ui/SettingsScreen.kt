@@ -128,14 +128,16 @@ fun SettingsScreen(
                     text = "设置",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1B2638)
+                    color = MaterialTheme.colorScheme.primary
                 )
                 Text(
                     text = "管理每日回流提醒和系统通知权限",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF667085)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+
+            CyberPricingSection()
 
             SettingsCard {
                 Row(
@@ -151,7 +153,7 @@ fun SettingsScreen(
                             text = "每日回流提醒",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF1D2939)
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
                             text = if (notificationsEnabled) {
@@ -160,7 +162,7 @@ fun SettingsScreen(
                                 "关闭后不会安排新的定时提醒"
                             },
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFF667085)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     Switch(
@@ -177,8 +179,8 @@ fun SettingsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(18.dp))
-                        .background(Color(0xFFF8FBFF))
-                        .border(1.dp, Color(0xFFE1EAF4), RoundedCornerShape(18.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f))
+                        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.16f), RoundedCornerShape(18.dp))
                         .padding(16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -188,13 +190,13 @@ fun SettingsScreen(
                             text = "提醒时间",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
-                            color = Color(0xFF344054)
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Text(
                             text = reminderTime.formatted(),
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1570EF)
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                     OutlinedButton(onClick = { showTimePicker = true }) {
@@ -208,7 +210,7 @@ fun SettingsScreen(
                 Text(
                     text = "部分手机不会允许应用直接打开顶部横幅。vivo 等机型通常需要进入系统通知设置，手动开启横幅通知、悬浮通知或顶部预览。",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF667085)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(14.dp))
                 Button(
@@ -224,7 +226,7 @@ fun SettingsScreen(
                 Text(
                     text = "用于采集悬浮窗等浮层能力。点击后会进入系统权限页，请为活页夹打开悬浮窗权限。",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF667085)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(14.dp))
                 OutlinedButton(
@@ -326,13 +328,13 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.92f)),
+        colors = techCardColors(),
+        border = techPanelBorder(),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .border(1.dp, Color(0xFFECEFF5), RoundedCornerShape(24.dp))
                 .padding(18.dp),
             content = content
         )
@@ -345,7 +347,7 @@ private fun SettingsSectionTitle(text: String) {
         text = text,
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.SemiBold,
-        color = Color(0xFF1D2939)
+        color = MaterialTheme.colorScheme.primary
     )
     Spacer(modifier = Modifier.height(8.dp))
 }
@@ -361,21 +363,21 @@ private fun GuideItem(number: String, text: String) {
             modifier = Modifier
                 .size(24.dp)
                 .clip(CircleShape)
-                .background(Color(0xFFE6F7F5)),
+                .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = number,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFF027A7A)
+                color = MaterialTheme.colorScheme.onPrimaryContainer
             )
         }
         Text(
             text = text,
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodyMedium,
-            color = Color(0xFF475467)
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }

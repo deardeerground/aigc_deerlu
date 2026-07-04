@@ -1,5 +1,9 @@
 package com.huoyejia.ai
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
 import com.huoyejia.data.local.NoteEntity
 import com.huoyejia.domain.AnimationScene
 import com.huoyejia.domain.ExplainPack
@@ -13,11 +17,15 @@ import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlin.math.roundToInt
 
 class RemoteBlueLMAdapter(
+    private val context: Context,
     private val config: LlmRuntimeConfig,
     private val fallback: BlueLMAdapter
 ) : BlueLMAdapter {
@@ -80,23 +88,83 @@ class RemoteBlueLMAdapter(
         }
     }
 
-    override suspend fun embed(text: String): FloatArray {
+    override suspend fun describeImage(imagePath: String, contextText: String): String {
+        return runRemoteOrFallback(
+            ready = config.chatReady,
+            remoteCall = {
+                withContext(Dispatchers.IO) {
+                    val imageDataUrl = imagePath.toImageDataUrl(context)
+                        ?: throw IllegalStateException("无法读取本地图片。")
+                    val instruction = """
+                        你是学习资料图像理解助手。
+                        请理解用户上传的图片，把它转换成后续可摘要、可打标签、可生成复习卡的中文学习内容。
+                        如果图片是图表、流程图、手写板书、知识截图、地图、实验图、商品图或 UI 截图，都要描述主体、关键信息、结构关系和可能的学习主题。
+                        不要编造看不见的文字；如果有不确定内容，用“可能”说明。
+
+                        请用中文输出 120 到 220 字的图片学习描述。
+                        输出应包含：
+                        1. 画面/截图里主要有什么；
+                        2. 能提炼出的知识点或主题；
+                        3. 适合生成复习卡的问题方向。
+                        用户补充文本：${contextText.ifBlank { "无" }}
+                    """.trimIndent()
+                    val response = if (config.chat.path.contains("responses")) {
+                        postJson(config.chat, config.chat.path, responsesPayload(instruction, imageDataUrl = imageDataUrl))
+                    } else {
+                        val messages = JSONArray()
+                            .put(JSONObject().put("role", "system").put("content", instruction))
+                            .put(
+                                JSONObject()
+                                    .put("role", "user")
+                                    .put(
+                                        "content",
+                                        JSONArray()
+                                            .put(JSONObject().put("type", "text").put("text", "请理解这张图片。"))
+                                            .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", imageDataUrl)))
+                                    )
+                            )
+                        postJson(
+                            config.chat,
+                            config.chat.path.ifBlank { "/chat/completions" },
+                            JSONObject()
+                                .put("model", config.chat.model)
+                                .put("temperature", 0.2)
+                                .put("messages", messages)
+                        )
+                    }
+                    extractTextResponse(response).trim().ifBlank { throw IllegalStateException("视觉模型未返回图片描述。") }
+                }
+            },
+            fallbackCall = { fallback.describeImage(imagePath, contextText) }
+        )
+    }
+
+    override suspend fun embed(text: String, imagePath: String?): FloatArray {
         return runRemoteOrFallback(
             ready = config.embeddingReady,
             remoteCall = {
                 withContext(Dispatchers.IO) {
                     val embeddingPath = config.embedding.path.ifBlank { "/embeddings" }
+                    val imageDataUrl = imagePath?.toImageDataUrl(context)
                     val payload = JSONObject()
                         .put("model", config.embedding.model)
                         .put(
                             "input",
                             if (embeddingPath.contains("multimodal")) {
-                                JSONArray()
-                                    .put(
+                                JSONArray().apply {
+                                    put(
                                         JSONObject()
                                             .put("type", "text")
                                             .put("text", text)
                                     )
+                                    if (!imageDataUrl.isNullOrBlank()) {
+                                        put(
+                                            JSONObject()
+                                                .put("type", "image_url")
+                                                .put("image_url", JSONObject().put("url", imageDataUrl))
+                                        )
+                                    }
+                                }
                             } else {
                                 text
                             }
@@ -106,7 +174,7 @@ class RemoteBlueLMAdapter(
                     FloatArray(array.length()) { index -> array.getDouble(index).toFloat() }
                 }
             },
-            fallbackCall = { fallback.embed(text) }
+            fallbackCall = { fallback.embed(text, imagePath) }
         )
     }
 
@@ -272,17 +340,8 @@ class RemoteBlueLMAdapter(
                                     """.trimIndent()
                                 )
                         )
-                    val payload = JSONObject()
-                        .put("model", config.chat.model)
-                        .put("temperature", 0.3)
-                        .put("messages", messages)
-                    val response = postJson(config.chat, "/chat/completions", payload)
-                    response
-                        .getJSONArray("choices")
-                        .getJSONObject(0)
-                        .getJSONObject("message")
-                        .optString("content")
-                        .ifBlank { "AI 暂时没有返回内容，请重试。" }
+                    val response = postChat(messages, temperature = 0.3)
+                    extractTextResponse(response).ifBlank { "AI 暂时没有返回内容，请重试。" }
                 }
             },
             fallbackCall = { fallback.answerCardQuestion(current, related, question) }
@@ -344,16 +403,8 @@ class RemoteBlueLMAdapter(
                             .put("role", "user")
                             .put("content", pack.animationPrompt())
                     )
-                val payload = JSONObject()
-                    .put("model", config.chat.model)
-                    .put("temperature", 0.7)
-                    .put("messages", messages)
-                val response = postJson(config.chat, "/chat/completions", payload)
-                val content = response
-                    .getJSONArray("choices")
-                    .getJSONObject(0)
-                    .getJSONObject("message")
-                    .optString("content")
+                val response = postChat(messages, temperature = 0.7)
+                val content = extractTextResponse(response)
                 val html = JSONObject(extractJsonObject(content)).optString("html")
                 html.takeIf { it.contains("<html", ignoreCase = true) && it.contains("</html>", ignoreCase = true) }
             }
@@ -369,21 +420,64 @@ class RemoteBlueLMAdapter(
             val messages = JSONArray()
                 .put(JSONObject().put("role", "system").put("content", system))
                 .put(JSONObject().put("role", "user").put("content", user))
-            val payload = JSONObject()
-                .put("model", config.chat.model)
-                .put("temperature", 0.2)
-                .put("messages", messages)
-            if (forceJsonObject) {
-                payload.put("response_format", JSONObject().put("type", "json_object"))
-            }
-            val response = postJson(config.chat, "/chat/completions", payload)
-            val content = response
-                .getJSONArray("choices")
-                .getJSONObject(0)
-                .getJSONObject("message")
-                .optString("content")
+            val response = postChat(messages, temperature = 0.2, forceJsonObject = forceJsonObject)
+            val content = extractTextResponse(response)
             JSONObject(extractJsonObject(content))
         }
+    }
+
+    private fun postChat(messages: JSONArray, temperature: Double, forceJsonObject: Boolean = false): JSONObject {
+        val path = config.chat.path.ifBlank { "/chat/completions" }
+        if (path.contains("responses")) {
+            val prompt = buildString {
+                for (index in 0 until messages.length()) {
+                    val message = messages.getJSONObject(index)
+                    appendLine("${message.optString("role")}：")
+                    appendLine(message.optString("content"))
+                    appendLine()
+                }
+                if (forceJsonObject) appendLine("必须只返回一个合法 JSON 对象。")
+            }.trim()
+            return postJson(config.chat, path, responsesPayload(prompt))
+        }
+        val payload = JSONObject()
+            .put("model", config.chat.model)
+            .put("temperature", temperature)
+            .put("messages", messages)
+        if (forceJsonObject) {
+            payload.put("response_format", JSONObject().put("type", "json_object"))
+        }
+        return postJson(config.chat, path, payload)
+    }
+
+    private fun responsesPayload(text: String, imageDataUrl: String? = null): JSONObject {
+        val content = JSONArray()
+        if (!imageDataUrl.isNullOrBlank()) {
+            content.put(JSONObject().put("type", "input_image").put("image_url", imageDataUrl))
+        }
+        content.put(JSONObject().put("type", "input_text").put("text", text))
+        return JSONObject()
+            .put("model", config.chat.model)
+            .put("input", JSONArray().put(JSONObject().put("role", "user").put("content", content)))
+    }
+
+    private fun extractTextResponse(response: JSONObject): String {
+        response.optString("output_text").takeIf { it.isNotBlank() }?.let { return it }
+        response.optJSONArray("choices")?.optJSONObject(0)
+            ?.optJSONObject("message")
+            ?.optString("content")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { return it }
+        val output = response.optJSONArray("output") ?: return ""
+        for (i in 0 until output.length()) {
+            val content = output.optJSONObject(i)?.optJSONArray("content") ?: continue
+            for (j in 0 until content.length()) {
+                val item = content.optJSONObject(j) ?: continue
+                val text = item.optString("text").ifBlank { item.optString("output_text") }
+                if (text.isNotBlank()) return text
+            }
+        }
+        return ""
     }
 
     private fun postJson(endpoint: LlmEndpointConfig, path: String, payload: JSONObject): JSONObject {
@@ -442,6 +536,58 @@ private fun ImageEndpointConfig.toEndpoint(): LlmEndpointConfig {
         model = model
     )
 }
+
+private fun String.toImageDataUrl(context: Context): String? {
+    return runCatching {
+        val uri = toLocalImageUri(context)
+        val sourceBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: return@runCatching null
+        val (mimeType, bytes) = sourceBytes.toEmbeddingImageBytes()
+            ?: (context.resolveMimeType(uri, this) to sourceBytes)
+        "data:$mimeType;base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}"
+    }.getOrNull()
+}
+
+private fun String.toLocalImageUri(context: Context): Uri {
+    if (startsWith("content://") || startsWith("file://")) return Uri.parse(this)
+    val file = File(this).let { if (it.isAbsolute) it else File(context.filesDir, this) }
+    return Uri.fromFile(file)
+}
+
+private fun Context.resolveMimeType(uri: Uri, path: String): String {
+    return contentResolver.getType(uri) ?: when {
+        path.lowercase().endsWith(".png") -> "image/png"
+        path.lowercase().endsWith(".webp") -> "image/webp"
+        else -> "image/jpeg"
+    }
+}
+
+private fun ByteArray.toEmbeddingImageBytes(): Pair<String, ByteArray>? {
+    val bitmap = BitmapFactory.decodeByteArray(this, 0, size) ?: return null
+    val maxSide = maxOf(bitmap.width, bitmap.height)
+    val scale = if (maxSide > EMBEDDING_IMAGE_MAX_SIDE) EMBEDDING_IMAGE_MAX_SIDE.toFloat() / maxSide else 1f
+    val scaled = if (scale < 1f) {
+        Bitmap.createScaledBitmap(
+            bitmap,
+            (bitmap.width * scale).roundToInt().coerceAtLeast(1),
+            (bitmap.height * scale).roundToInt().coerceAtLeast(1),
+            true
+        )
+    } else {
+        bitmap
+    }
+    return runCatching {
+        val output = ByteArrayOutputStream()
+        scaled.compress(Bitmap.CompressFormat.JPEG, EMBEDDING_IMAGE_JPEG_QUALITY, output)
+        "image/jpeg" to output.toByteArray()
+    }.also {
+        if (scaled !== bitmap) scaled.recycle()
+        bitmap.recycle()
+    }.getOrNull()
+}
+
+private const val EMBEDDING_IMAGE_MAX_SIDE = 1024
+private const val EMBEDDING_IMAGE_JPEG_QUALITY = 82
 
 private fun ExplainPack.animationPrompt(): String {
     return """

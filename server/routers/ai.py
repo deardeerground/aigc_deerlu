@@ -24,6 +24,7 @@ from schemas import (
     SearchResult,
     VideoGenerateResponse,
 )
+from web_extractor import extract_url_content
 
 router = APIRouter(prefix="/api", tags=["ai"])
 
@@ -42,6 +43,11 @@ class EnrichRequest(PydanticBase):
 
 class EmbedRequest(PydanticBase):
     text: str
+    image_path: str | None = None
+
+
+class ExtractUrlRequest(PydanticBase):
+    url: str
 
 
 class ClassifyRelationRequest(PydanticBase):
@@ -118,6 +124,21 @@ async def api_embed(body: EmbedRequest, llm: LlmClient = Depends(get_llm)):
         raise HTTPException(status_code=400, detail="嵌入模型未配置")
     vec = await llm.embed(body.text)
     return {"embedding": vec}
+
+
+@router.post("/extract-url")
+async def api_extract_url(body: ExtractUrlRequest):
+    result = await extract_url_content(body.url)
+    return {
+        "input_url": result.input_url,
+        "final_url": result.final_url,
+        "title": result.title,
+        "text": result.text,
+        "excerpt": result.excerpt,
+        "status": result.status,
+        "failure_reason": result.failure_reason,
+        "ai_text": result.to_ai_text(),
+    }
 
 
 @router.post("/classify-relation")
@@ -285,7 +306,18 @@ async def _run_pipeline(note_id: str, llm: LlmClient):
             note.processed_status = "PROCESSING"
             await db.commit()
 
-            content = note.note_content or note.source_title
+            web_text = ""
+            if note.url:
+                web = await extract_url_content(note.url)
+                web_text = web.to_ai_text()
+                if web.title and (not note.source_title or note.source_title == "未命名收藏"):
+                    note.source_title = web.title[:512]
+            content = _build_learning_content(
+                raw_text=note.raw_text or "",
+                ocr_text=note.ocr_text or "",
+                web_text=web_text,
+                fallback=note.note_content or note.source_title,
+            )
             if not llm.embedding_ready:
                 note.processed_status = "FAILED"
                 await db.commit()
@@ -694,6 +726,17 @@ def _find_video_url(data: dict) -> str | None:
             if found:
                 return found
     return None
+
+
+def _build_learning_content(raw_text: str, ocr_text: str, web_text: str, fallback: str) -> str:
+    parts = [raw_text, ocr_text, web_text]
+    content = "\n".join(p.strip() for p in parts if p and p.strip())
+    if not content.strip():
+        content = fallback or ""
+    content = re.sub(r"[\x00-\x1F]", " ", content)
+    content = re.sub(r"[ \t\r\f\v]+", " ", content)
+    content = re.sub(r"\n\s*\n+", "\n", content)
+    return content.strip()
 
 
 def _encode_vector(vec: list[float]) -> bytes | None:
