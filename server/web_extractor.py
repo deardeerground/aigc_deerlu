@@ -1,7 +1,7 @@
 import html
 import re
 from dataclasses import dataclass
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
 
 import httpx
 
@@ -23,12 +23,18 @@ class WebExtractResult:
     failure_reason: str | None = None
 
     def to_ai_text(self) -> str:
+        if self.status != "success" and not self.text.strip():
+            reason = self.failure_reason or "网页需要登录、动态渲染、反爬限制或网络不可用"
+            return "\n".join([
+                f"学习网址：{self.final_url}",
+                f"网页正文：未识别成功，原因可能为{reason}。",
+            ])
         parts = [
             f"学习网址：{self.final_url}",
             f"网页标题：{self.title}" if self.title else "",
             f"网页描述：{self.excerpt}" if self.excerpt else "",
             f"网页正文：\n{self.text}" if self.text else "",
-            f"网页读取状态：{self.failure_reason}" if self.status != "success" and self.failure_reason else "",
+            f"网页读取状态：未识别成功，原因可能为{self.failure_reason}。" if self.status != "success" and self.failure_reason else "",
         ]
         return "\n".join(p for p in parts if p.strip())
 
@@ -174,17 +180,15 @@ def normalize_url(url: str | None) -> str:
     return value
 
 
-def fallback_result(url: str, reason: str = "仅保留网址信息", status: str = "partial") -> WebExtractResult:
+def fallback_result(url: str, reason: str = "网页需要登录、动态渲染、反爬限制、网络不可用或链接不是公开文章", status: str = "failed") -> WebExtractResult:
     normalized = normalize_url(url)
     parsed = urlparse(normalized)
     host = (parsed.netloc or "").removeprefix("www.")
-    path = normalize_text(re.sub(r"[/_\-.]+", " ", unquote(parsed.path or "")))
-    text = "\n".join(p for p in (f"网站：{host}" if host else "", f"网址路径关键词：{path}" if len(path) > 1 else "") if p)
     return WebExtractResult(
         input_url=normalized,
         final_url=normalized,
         title=host or None,
-        text=text,
+        text="",
         excerpt=None,
         status=status,
         failure_reason=reason,

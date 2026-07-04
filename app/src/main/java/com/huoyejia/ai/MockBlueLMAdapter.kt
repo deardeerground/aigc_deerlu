@@ -35,7 +35,7 @@ class MockBlueLMAdapter : BlueLMAdapter {
 
     override suspend fun describeImage(imagePath: String, contextText: String): String {
         val fileName = imagePath.substringAfterLast('/').substringAfterLast('\\').ifBlank { "本地图片" }
-        return "这是一张用户上传的学习截图或图片资料，文件名为 $fileName。当前未接入远程视觉理解时，只能根据 OCR 和用户补充文本整理；接入多模态模型后会自动识别画面主体、文字、结构和可复习知识点。"
+        return "未识别成功，原因可能为未配置支持图片输入的视觉理解模型、图片文件不可读，或当前只启用了本地兜底模式。图片文件：$fileName。"
     }
 
     override suspend fun embed(text: String, imagePath: String?): FloatArray {

@@ -729,7 +729,7 @@ def _find_video_url(data: dict) -> str | None:
 
 
 def _build_learning_content(raw_text: str, ocr_text: str, web_text: str, fallback: str) -> str:
-    parts = [raw_text, ocr_text, web_text]
+    parts = [_sanitize_recognized_text(raw_text), _sanitize_recognized_text(ocr_text), _sanitize_recognized_text(web_text)]
     content = "\n".join(p.strip() for p in parts if p and p.strip())
     if not content.strip():
         content = fallback or ""
@@ -737,6 +737,18 @@ def _build_learning_content(raw_text: str, ocr_text: str, web_text: str, fallbac
     content = re.sub(r"[ \t\r\f\v]+", " ", content)
     content = re.sub(r"\n\s*\n+", "\n", content)
     return content.strip()
+
+
+def _sanitize_recognized_text(text: str) -> str:
+    value = (text or "").strip()
+    if not value:
+        return ""
+    visible = max(len(re.sub(r"\s+", "", value)), 1)
+    replacement_ratio = value.count("�") / visible
+    garbled_hits = sum(mark in value for mark in ("锟斤拷", "�", "Ã", "Â", "Ð"))
+    if garbled_hits >= 2 or replacement_ratio > 0.04:
+        return "未识别成功，原因可能为文本编码异常、网页返回乱码、图片质量过低或模型返回内容不可读。"
+    return value
 
 
 def _encode_vector(vec: list[float]) -> bytes | None:

@@ -372,11 +372,26 @@ class NoteProcessor(
             ocr,
             web
         )
+            .map { it.sanitizeRecognizedText() }
             .filter { it.isNotBlank() }
             .joinToString("\n")
             .replace(Regex("[\\u0000-\\u001F]"), " ")
             .replace(Regex("\\s{2,}"), " ")
             .trim()
+    }
+
+    private fun String.sanitizeRecognizedText(): String {
+        val clean = trim()
+        if (clean.isBlank()) return ""
+        val garbledMarks = listOf("锟斤拷", "�", "Ã", "Â", "Ð", "�")
+        val garbledHits = garbledMarks.count { clean.contains(it) }
+        val visibleChars = clean.count { !it.isWhitespace() }.coerceAtLeast(1)
+        val replacementRatio = clean.count { it == '�' }.toFloat() / visibleChars
+        return if (garbledHits >= 2 || replacementRatio > 0.04f) {
+            "未识别成功，原因可能为文本编码异常、网页返回乱码、图片质量过低或模型返回内容不可读。"
+        } else {
+            clean
+        }
     }
 
     private fun String?.hasLocalImage(): Boolean = !isNullOrBlank()

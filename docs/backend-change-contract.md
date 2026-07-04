@@ -341,3 +341,45 @@ LLM_CHAT_PATH=/responses
 - `describeImage()` 会在 `LLM_CHAT_PATH=/responses` 时按火山 Responses API 格式发送图片。
 - 文本摘要、问答、动画 HTML 等直连聊天能力也可以走 `/responses`，并自动解析 `output_text` 或 `output[].content[].text`。
 - 后端暂未新增 `/api/describe-image`，所以如果启用了 `SERVER_BASE_URL`，App 的图片理解仍会 fallback 到直连视觉模型。
+
+## 2026-07-04 识别失败兜底日志
+
+本次优化“网页抓取、图片识别、文字识别”失败时的返回内容，避免把乱码、域名路径或 mock 文案当成正常知识点。
+
+### 1. 统一失败文案
+
+当网页抓取、图片理解、OCR 或模型返回内容不可读时，统一返回类似：
+
+```text
+未识别成功，原因可能为网页需要登录、动态渲染、反爬限制、网络不可用、图片质量过低、未配置视觉理解模型或模型返回内容不可读。
+```
+
+### 2. App 端改动
+
+修改文件：
+
+- `app/src/main/java/com/huoyejia/domain/WebContentExtractor.kt`
+- `app/src/main/java/com/huoyejia/domain/NoteProcessor.kt`
+- `app/src/main/java/com/huoyejia/ai/MockBlueLMAdapter.kt`
+- `app/src/main/java/com/huoyejia/ui/Screens.kt`
+- `app/src/main/java/com/huoyejia/data/SeedData.kt`
+
+影响：
+
+- 网页无法抓取时，不再把“域名/路径关键词”伪装成正文。
+- 图片理解没有真实视觉模型时，不再返回 mock 描述，而是明确提示未识别成功。
+- 识别结果中出现明显乱码标记时，会替换成未识别成功提示。
+- 卡片详情页如果图片没有识别结果，会展示失败原因而不是空白。
+- 默认示例已更换为经济学、实验截图、英语写作三类案例。
+
+### 3. 后端改动
+
+修改文件：
+
+- `server/web_extractor.py`
+- `server/routers/ai.py`
+
+影响：
+
+- 后端 URL 抽取失败时返回明确失败原因。
+- 后端处理流水线会过滤明显乱码识别结果。

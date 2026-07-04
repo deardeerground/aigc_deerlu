@@ -1704,7 +1704,13 @@ private fun SourceMaterialCard(note: NoteEntity) {
             note.ocrText?.takeIf { it.isNotBlank() }?.let { "OCR 识别：\n$it" },
             note.noteContent.takeIf { it.isNotBlank() && it != note.rawText }?.let { "AI 整理/图片理解：\n$it" }
         ).joinToString("\n\n")
-    )
+    ).ifBlank {
+        if (!note.imagePath.isNullOrBlank()) {
+            "未识别成功，原因可能为图片中没有可识别文字、图片文件不可读、未配置视觉理解模型或模型服务暂时不可用。"
+        } else {
+            ""
+        }
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),

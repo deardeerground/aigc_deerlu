@@ -12,50 +12,50 @@ class SeedData(
         if (noteRepository.countNotes() > 0) return
 
         // 创建默认文件夹
-        val historyFolder = FolderEntity(
-            folderId = "default_history",
-            name = "历史类",
+        val economyFolder = FolderEntity(
+            folderId = "default_economy",
+            name = "经济学",
             createdAt = System.currentTimeMillis()
         )
-        val learningFolder = FolderEntity(
-            folderId = "default_learning",
-            name = "学习方法",
+        val languageFolder = FolderEntity(
+            folderId = "default_language",
+            name = "英语表达",
             createdAt = System.currentTimeMillis()
         )
         val imageFolder = FolderEntity(
             folderId = "default_image",
-            name = "图像资料",
+            name = "实验截图",
             createdAt = System.currentTimeMillis()
         )
 
-        folderRepository.upsert(historyFolder)
-        folderRepository.upsert(learningFolder)
+        folderRepository.upsert(economyFolder)
+        folderRepository.upsert(languageFolder)
         folderRepository.upsert(imageFolder)
 
         // 创建种子笔记并关联到对应文件夹
         processor.captureAndProcess(
-            rawText = "凡尔赛体系削弱德国但没有解决欧洲安全结构问题，经济危机又强化了极端政治，这是二战爆发的重要原因。",
+            rawText = "机会成本不是实际花出去的钱，而是做出一个选择时放弃的最佳替代方案。判断一个决策是否划算，要看被放弃选项的价值。",
             imagePath = null,
-            sourceType = "bilibili",
-            sourceTitle = "二战爆发深层原因",
-            url = "https://www.bilibili.com/video/BV-demo",
-            folderId = historyFolder.folderId
+            sourceType = "web",
+            sourceTitle = "经济学：机会成本",
+            url = "https://example.com/opportunity-cost",
+            folderId = economyFolder.folderId
         )
         processor.captureAndProcess(
             rawText = "",
-            imagePath = "/mock/screenshot/europe-map.png",
+            imagePath = "/mock/screenshot/physics-experiment.png",
             sourceType = "image",
-            sourceTitle = "课堂地图截图：欧洲势力范围",
+            sourceTitle = "实验截图：小车运动图像",
             url = null,
             folderId = imageFolder.folderId
         )
         processor.captureAndProcess(
-            rawText = "费曼学习法的关键是用自己的话输出，暴露理解漏洞，再回到材料中修正。",
+            rawText = "Instead of saying very important every time, academic writing often uses essential, significant, crucial, or fundamental depending on the context.",
             imagePath = null,
-            sourceType = "wechat",
-            sourceTitle = "学习方法：费曼输出法",
-            url = "https://mp.weixin.qq.com/mock",
-            folderId = learningFolder.folderId
+            sourceType = "manual",
+            sourceTitle = "英语写作：important 的替代表达",
+            url = null,
+            folderId = languageFolder.folderId
         )
     }
 }

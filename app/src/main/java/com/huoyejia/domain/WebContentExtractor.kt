@@ -4,7 +4,6 @@ import com.huoyejia.util.UrlTools
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
-import java.net.URLDecoder
 import java.nio.charset.Charset
 import java.util.Locale
 import java.util.zip.GZIPInputStream
@@ -125,12 +124,18 @@ data class WebExtractResult(
     val failureReason: String? = null
 ) {
     fun toAiText(): String {
+        if (status != WebExtractStatus.Success && text.isBlank()) {
+            return listOf(
+                "学习网址：$finalUrl",
+                "网页正文：未识别成功，原因可能为${failureReason ?: "网页需要登录、动态渲染、反爬限制或网络不可用"}。"
+            ).joinToString("\n")
+        }
         return listOfNotNull(
             "学习网址：$finalUrl",
             title?.takeIf { it.isNotBlank() }?.let { "网页标题：$it" },
             excerpt?.takeIf { it.isNotBlank() }?.let { "网页描述：$it" },
             text.takeIf { it.isNotBlank() }?.let { "网页正文：\n$it" },
-            if (status == WebExtractStatus.Failed && failureReason != null) "网页读取状态：$failureReason" else null
+            if (status != WebExtractStatus.Success && failureReason != null) "网页读取状态：未识别成功，原因可能为$failureReason。" else null
         ).joinToString("\n")
     }
 
@@ -139,25 +144,17 @@ data class WebExtractResult(
             val normalized = UrlTools.normalizeUrl(url) ?: url
             val uri = runCatching { URI(normalized) }.getOrNull()
             val host = uri?.host.orEmpty().removePrefix("www.")
-            val pathText = runCatching {
-                URLDecoder.decode(uri?.rawPath.orEmpty(), Charsets.UTF_8.name())
-            }.getOrDefault("")
-                .replace(Regex("[/_\\-.]+"), " ")
-                .trim()
-            val text = listOfNotNull(
-                host.takeIf { it.isNotBlank() }?.let { "网站：$it" },
-                pathText.takeIf { it.length > 1 }?.let { "网址路径关键词：$it" }
-            ).joinToString("\n")
+            val reason = "网页需要登录、动态渲染、反爬限制、网络不可用或链接不是公开文章"
             return WebExtractResult(
                 inputUrl = normalized,
                 finalUrl = normalized,
                 title = host.takeIf { it.isNotBlank() },
-                text = text,
+                text = "",
                 excerpt = null,
                 imageUrls = emptyList(),
                 method = WebExtractMethod.Fallback,
-                status = WebExtractStatus.Partial,
-                failureReason = "仅保留网址信息"
+                status = WebExtractStatus.Failed,
+                failureReason = reason
             )
         }
     }
