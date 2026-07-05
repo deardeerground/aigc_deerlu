@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -102,12 +103,14 @@ class MainActivity : ComponentActivity() {
                 val explainState by viewModel.explainState.collectAsState()
                 val cardAssistantState by viewModel.cardAssistantState.collectAsState()
                 val isBusy by viewModel.isBusy.collectAsState()
+                val isGeneratingCards by viewModel.isGeneratingCards.collectAsState()
                 val folders by viewModel.folders.collectAsState()
                 val processingProgress by viewModel.processingProgress.collectAsState()
                 val pending = pendingCapture
                 val shouldOpenCapture = pending != null || openCaptureRequested
                 val mainRoutes = listOf("collections", "capture", "review", "dashboard", "settings")
                 val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
+                val tabNavDirection = remember { mutableStateOf(1f) }
 
                 val activity = this
                 DisposableEffect(currentRoute) {
@@ -152,21 +155,24 @@ class MainActivity : ComponentActivity() {
 
                 HuoyejiaScaffold(
                     navController = navController,
-                    isBusy = isBusy
+                    isBusy = isBusy,
+                    tabNavDirection = tabNavDirection
                 ) {
                     NavHost(
                         navController = navController,
                         startDestination = "collections",
                         modifier = Modifier.fillMaxSize(),
                         enterTransition = {
+                            val dir = tabNavDirection.value
                             slideInHorizontally(
-                                initialOffsetX = { fullWidth: Int -> fullWidth },
+                                initialOffsetX = { fullWidth: Int -> (fullWidth * dir).toInt() },
                                 animationSpec = tween(300)
                             ) + fadeIn(animationSpec = tween(300))
                         },
                         exitTransition = {
+                            val dir = tabNavDirection.value
                             slideOutHorizontally(
-                                targetOffsetX = { fullWidth: Int -> -fullWidth / 3 },
+                                targetOffsetX = { fullWidth: Int -> (-fullWidth * dir).toInt() },
                                 animationSpec = tween(300)
                             ) + fadeOut(animationSpec = tween(300))
                         },
@@ -233,7 +239,8 @@ class MainActivity : ComponentActivity() {
                                 onDone = viewModel::completeCard,
                                 onGenerateMore = {
                                     viewModel.generateReviewCardsForLeastReviewed(3)
-                                }
+                                },
+                                isGenerating = isGeneratingCards
                             )
                         }
                         composable("dashboard") {

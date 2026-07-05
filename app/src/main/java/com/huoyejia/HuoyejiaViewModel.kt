@@ -57,6 +57,9 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
     private val _isBusy = MutableStateFlow(false)
     val isBusy: StateFlow<Boolean> = _isBusy.asStateFlow()
 
+    private val _isGeneratingCards = MutableStateFlow(false)
+    val isGeneratingCards: StateFlow<Boolean> = _isGeneratingCards.asStateFlow()
+
     private val _cardAssistantState = MutableStateFlow(CardAssistantState())
     val cardAssistantState: StateFlow<CardAssistantState> = _cardAssistantState.asStateFlow()
 
@@ -249,8 +252,10 @@ class HuoyejiaViewModel(application: Application) : AndroidViewModel(application
 
     fun generateReviewCardsForLeastReviewed(count: Int = 3) {
         viewModelScope.launch {
+            _isGeneratingCards.value = true
             container.reviewCardGenerator.generateReviewCardsForLeastReviewed(count)
             refreshStats()
+            _isGeneratingCards.value = false
         }
     }
 

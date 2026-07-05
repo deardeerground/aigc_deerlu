@@ -592,7 +592,8 @@ fun ReviewScreen(
     notes: List<NoteEntity>,
     cards: List<ReviewCardEntity>,
     onDone: (ReviewCardEntity) -> Unit,
-    onGenerateMore: () -> Unit = {}
+    onGenerateMore: () -> Unit = {},
+    isGenerating: Boolean = false
 ) {
     val todo = cards.filter { it.status == "TODO" }
     LazyColumn(
@@ -614,9 +615,9 @@ fun ReviewScreen(
                 Text("待复习: ${todo.size} 张", style = MaterialTheme.typography.bodyMedium)
                 Button(
                     onClick = onGenerateMore,
-                    enabled = notes.isNotEmpty()
+                    enabled = notes.isNotEmpty() && !isGenerating
                 ) {
-                    Text("生成更多卡片")
+                    Text(if (isGenerating) "生成中..." else "生成更多卡片")
                 }
             }
         }
@@ -759,7 +760,10 @@ fun DashboardScreen(
                 )
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
             MetricPill("知识点", notes.size.toString())
             MetricPill("已复习", analytics.reviewedCount.toString())
             MetricPill("待处理", "${analytics.unprocessedPercent}%")
@@ -2536,7 +2540,7 @@ private fun RelatedCardSlide(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatusChip("${relation.relationType} ${(relation.confidence * 100).toInt()}%")
+            StatusChip("${chineseRelationType(relation.relationType)} ${(relation.confidence * 100).toInt()}%")
             Text(note.sourceTitle, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(note.summary ?: note.noteContent, maxLines = 4, overflow = TextOverflow.Ellipsis, lineHeight = 18.sp)
             TinyText("点击查看这张关联卡片")
@@ -2666,23 +2670,68 @@ private fun NoteCard(
     }
 }
 
+private fun chineseRelationType(relationType: String): String = when (relationType) {
+    "similar" -> "相似"
+    "supplement" -> "补充"
+    "contrast" -> "对比"
+    "cause_effect" -> "因果"
+    "same_topic" -> "同主题"
+    "single_note" -> "独立"
+    "none" -> "无"
+    else -> relationType
+}
+
+private fun chineseCardType(cardType: String): String = when (cardType) {
+    "relation" -> "关系型"
+    "contrast" -> "对比型"
+    "cause_transfer" -> "因果迁移"
+    else -> cardType
+}
+
+private fun chineseDifficulty(difficulty: String): String = when (difficulty) {
+    "easy" -> "简单"
+    "medium" -> "中等"
+    "hard" -> "困难"
+    else -> difficulty
+}
+
 @Composable
 private fun ReviewCardView(card: ReviewCardEntity, noteTitle: String, onDone: () -> Unit) {
+    val relatedIds = JsonText.decodeList(card.relatedNoteIds)
+    val isMulti = relatedIds.isNotEmpty()
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = techCardColors(),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.28f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(noteTitle.ifBlank { "关联复习" }, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
-            Text(card.question, fontSize = 18.sp, fontWeight = FontWeight.Black, lineHeight = 24.sp)
-            Text(card.explanation)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                StatusChip(card.cardType)
-                StatusChip(card.difficulty)
-                Spacer(Modifier.weight(1f))
-                Button(onClick = onDone) { Text("完成回流") }
+        Box {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(noteTitle.ifBlank { "关联复习" }, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
+                Text(card.question, fontSize = 18.sp, fontWeight = FontWeight.Black, lineHeight = 24.sp)
+                Text(card.explanation)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    StatusChip(chineseCardType(card.cardType))
+                    StatusChip(chineseDifficulty(card.difficulty))
+                    Spacer(Modifier.weight(1f))
+                    Button(onClick = onDone) { Text("完成回流") }
+                }
+            }
+            Surface(
+                modifier = Modifier.align(Alignment.TopEnd),
+                shape = RoundedCornerShape(bottomStart = 12.dp),
+                color = if (isMulti) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.18f)
+                        else MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                border = techPanelBorder(alpha = 0.32f)
+            ) {
+                Text(
+                    if (isMulti) "多回流" else "单回流",
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    color = if (isMulti) MaterialTheme.colorScheme.tertiary
+                            else MaterialTheme.colorScheme.primary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
@@ -2723,7 +2772,7 @@ private fun RelationCard(relation: NoteRelationEntity, note: NoteEntity, onClick
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("${relation.relationType} ${(relation.confidence * 100).toInt()}%", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Text("${chineseRelationType(relation.relationType)} ${(relation.confidence * 100).toInt()}%", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
             Text("${note.sourceTitle}\n${relation.evidence}", lineHeight = 20.sp)
         }
     }

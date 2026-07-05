@@ -137,8 +137,6 @@ fun SettingsScreen(
                 )
             }
 
-            CyberPricingSection()
-
             SettingsCard {
                 Row(
                     modifier = Modifier.fillMaxWidth(),

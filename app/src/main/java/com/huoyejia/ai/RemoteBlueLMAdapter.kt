@@ -238,10 +238,11 @@ class RemoteBlueLMAdapter(
                           "difficulty":"easy|medium|hard",
                           "card_type":"relation|contrast|cause_transfer"
                         }
-                        relationHint=$relationHint
+                         relationHint=$relationHint
                         current_title=${current.sourceTitle}
                         current=${current.noteContent}
                         related_optional=${related.joinToString("\n") { "${it.sourceTitle}: ${it.noteContent.take(260)}" }}
+                        isolation_policy=only_current_note; related_optional_max_one; do_not_mix_topics
                     """.trimIndent()
                 )
                 ReviewCardDraft(

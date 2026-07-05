@@ -22,6 +22,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,15 +49,18 @@ private val tabs = listOf(
 fun HuoyejiaScaffold(
     navController: NavHostController,
     isBusy: Boolean,
+    tabNavDirection: MutableState<Float>,
     content: @Composable (PaddingValues) -> Unit
 ) {
     val backStack by navController.currentBackStackEntryAsState()
     val current = backStack?.destination?.route.orEmpty()
 
-    // 获取导航图的起始路由（应该是"collections"）
     val startDestination = "collections"
     fun navigateToMainTab(route: String) {
         if (current != route) {
+            val currentIndex = tabs.indexOfFirst { it.route == current }
+            val targetIndex = tabs.indexOfFirst { it.route == route }
+            tabNavDirection.value = if (targetIndex > currentIndex) 1f else -1f
             navController.navigate(route) {
                 launchSingleTop = true
                 popUpTo(startDestination) { saveState = false }
@@ -137,13 +141,6 @@ fun HuoyejiaScaffold(
                 }
         ) {
             content(PaddingValues(0.dp))
-            if (tabs.any { it.route == current }) {
-                SwipeHintPill(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 10.dp)
-                )
-            }
             if (isBusy) {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -161,23 +158,6 @@ fun HuoyejiaScaffold(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun SwipeHintPill(modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(50),
-        color = Color.White.copy(alpha = 0.62f),
-        border = techPanelBorder(alpha = 0.48f)
-    ) {
-        Text(
-            "← 左右滑动切换页面 →",
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.78f),
-            style = MaterialTheme.typography.labelSmall
-        )
     }
 }
 
