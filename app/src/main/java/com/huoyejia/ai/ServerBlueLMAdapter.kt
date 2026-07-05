@@ -40,6 +40,7 @@ class ServerBlueLMAdapter(
                 put("max_similarity", maxSimilarity.toDouble())
             })
             NoteAiResult(
+                title = json.optString("title").ifBlank { noteContent.take(20).trim() },
                 summary = json.optString("summary").ifBlank { noteContent.take(60) },
                 tags = json.optJSONArray("tags")?.toStringList() ?: listOf("待归类"),
                 topic = json.optString("topic").ifBlank { "待归类" },

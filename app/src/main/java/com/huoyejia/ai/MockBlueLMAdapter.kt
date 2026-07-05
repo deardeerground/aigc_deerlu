@@ -17,6 +17,7 @@ class MockBlueLMAdapter : BlueLMAdapter {
         val topic = detectTopic(noteContent)
         val tags = detectTags(noteContent, topic)
         val summary = buildSummary(noteContent)
+        val title = buildTitle(noteContent, topic)
         val importance = when {
             noteContent.contains("原因") || noteContent.contains("方法") || noteContent.contains("原理") || noteContent.contains("如何") -> 0.86f
             noteContent.contains("地图") || noteContent.contains("课堂") || noteContent.contains("总结") -> 0.74f
@@ -25,6 +26,7 @@ class MockBlueLMAdapter : BlueLMAdapter {
             else -> 0.58f
         }
         return NoteAiResult(
+            title = title.ifBlank { noteContent.take(20).trim() },
             summary = summary.ifBlank { "这条收藏需要结合上下文复习。" },
             tags = tags,
             topic = topic,
@@ -169,6 +171,13 @@ class MockBlueLMAdapter : BlueLMAdapter {
             if (content.contains(key, ignoreCase = true)) tags += tag
         }
         return tags.take(6)
+    }
+
+    private fun buildTitle(content: String, topic: String): String {
+        val clean = content.replace(Regex("\\s+"), " ").trim()
+        val sentences = clean.split(Regex("(?<=[。！？\\n])")).map { it.trim() }.filter { it.length > 6 }
+        val first = sentences.firstOrNull()?.take(22) ?: clean.take(22)
+        return first.trimEnd('。', '！', '？', '，', '、').trim()
     }
 
     private fun buildSummary(content: String): String {

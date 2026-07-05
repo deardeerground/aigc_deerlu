@@ -6,6 +6,7 @@ data class NoteAiResult(
     val summary: String,
     val tags: List<String>,
     val topic: String,
+    val title: String,
     val importance: Float,
     val duplicateScore: Float
 )

@@ -101,6 +101,7 @@ async def api_enrich_note(body: EnrichRequest, llm: LlmClient = Depends(get_llm)
         user=f"""基于以下 note_content 生成结构化结果。
 JSON schema:
 {{
+  "title":"15字以内的简洁中文标题，直接提炼核心关键词",
   "summary":"用中文归纳核心观点，40到80字",
   "tags":["最多5个中文短标签"],
   "topic":"一个中文主题",
@@ -112,6 +113,7 @@ note_content={body.note_content}""",
         force_json=True,
     )
     return {
+        "title": ai.get("title", ""),
         "summary": ai.get("summary", ""),
         "tags": ai.get("tags", []),
         "topic": ai.get("topic", ""),
@@ -280,6 +282,22 @@ async def api_generate_animation_html(body: GenerateAnimationRequest, llm: LlmCl
     return {"html": html}
 
 
+class PolishRecognitionRequest(PydanticBase):
+    raw_text: str
+
+
+@router.post("/polish-recognition")
+async def api_polish_recognition(body: PolishRecognitionRequest, llm: LlmClient = Depends(get_llm)):
+    if not llm.chat_ready:
+        return {"polished_text": body.raw_text}
+    result = await llm.chat_text(
+        system="你是学习内容整理助手。输入的原始材料可能同时包含文字识别结果和图像理解内容，请将二者有机融合为一段通顺、无病句的中文学习内容。不要丢失图像描述中的视觉信息（图表、结构、照片内容），也不要遗漏文字中的关键知识点。直接输出整理后的全文，不要加任何标签或说明。",
+        user=body.raw_text,
+        temperature=0.2,
+    )
+    return {"polished_text": result.strip() if result else body.raw_text}
+
+
 # ----- Processing -----
 
 @router.post("/notes/{note_id}/process", response_model=ProcessingProgress)
@@ -365,6 +383,7 @@ async def _run_pipeline(note_id: str, llm: LlmClient):
                 user=f"""基于以下 note_content 生成结构化结果。
 JSON schema:
 {{
+  "title":"15字以内的简洁中文标题，直接提炼核心关键词",
   "summary":"用中文归纳核心观点，40到80字，不要照抄原文",
   "tags":["最多5个中文短标签"],
   "topic":"一个中文主题",
@@ -376,11 +395,15 @@ note_content={content}""",
                 force_json=True,
             )
 
+            ai_title = ai.get("title", "").strip()
             summary = ai.get("summary", "").strip() or content[:60]
             tags = json.dumps((ai.get("tags") or ["待归类"])[:5], ensure_ascii=False)
             topic = ai.get("topic") or "待归类"
             importance = float(ai.get("importance", 0.7))
             duplicate_score = float(ai.get("duplicate_score", max_similarity))
+
+            if ai_title and (not note.source_title or note.source_title.strip() == "" or note.source_title in ("未命名收藏", "分享采集", "浮窗采集")):
+                note.source_title = ai_title[:512]
 
             note.note_content = content
             note.summary = summary

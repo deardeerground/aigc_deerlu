@@ -55,10 +55,11 @@ class RemoteBlueLMAdapter(
                     你是学习收藏助手。必须只返回一个合法 JSON 对象，不要 markdown，不要解释文字。
                     摘要必须进行归纳提炼，禁止直接复制原文或只截取原文开头。
                 """.trimIndent(),
-                user = """
+                 user = """
                     基于以下 note_content 生成结构化结果。
                     JSON schema:
                     {
+                      "title":"15字以内的简洁中文标题，直接提炼核心关键词",
                       "summary":"用中文归纳核心观点，40到80字，不要照抄原文",
                       "tags":["最多5个中文短标签"],
                       "topic":"一个中文主题",
@@ -75,6 +76,7 @@ class RemoteBlueLMAdapter(
                 throw IllegalStateException("模型返回 JSON 中缺少 summary。")
             }
             NoteAiResult(
+                title = response.optString("title").ifBlank { noteContent.take(20).trim() },
                 summary = summary,
                 tags = response.optJSONArray("tags").toStringList().ifEmpty { listOf("待归类") },
                 topic = response.optString("topic").ifBlank { "待归类" },
@@ -148,7 +150,7 @@ class RemoteBlueLMAdapter(
                 withContext(Dispatchers.IO) {
                     val messages = JSONArray()
                         .put(JSONObject().put("role", "system").put("content",
-                            "你是学习内容整理助手。请将以下OCR和图像识别的原始结果整理成通顺、无病句、一气呵成的中文段落。保留所有知识点信息，修复断句、错字、乱码和格式问题。直接输出整理后的文本，不要加任何说明或标记。"))
+                            "你是学习内容整理助手。输入的原始材料可能同时包含文字识别结果和图像理解内容，请将二者有机融合为一段通顺、无病句的中文学习内容。不要丢失图像描述中的视觉信息（图表、结构、照片内容），也不要遗漏文字中的关键知识点。直接输出整理后的全文，不要加任何标签或说明。"))
                         .put(JSONObject().put("role", "user").put("content", rawText))
                     val response = postChat(messages, temperature = 0.2)
                     extractTextResponse(response).trim().ifBlank { rawText }

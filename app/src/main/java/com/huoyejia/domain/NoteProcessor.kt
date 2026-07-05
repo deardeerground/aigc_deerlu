@@ -106,8 +106,14 @@ class NoteProcessor(
                 removeProgress(noteId)
                 return@withContext
             }
+            val resolvedTitle = if (note.sourceTitle.isBlank() || note.sourceTitle in PLACEHOLDER_TITLES) {
+                ai.title.ifBlank { note.sourceTitle }
+            } else {
+                note.sourceTitle
+            }
             val enriched = note.copy(
                 ocrText = material.ocrText.ifBlank { null },
+                sourceTitle = resolvedTitle,
                 noteContent = content,
                 summary = ai.summary,
                 tags = JsonText.encodeList(sanitizeTags(ai.tags, ai.topic)),
@@ -282,14 +288,20 @@ class NoteProcessor(
             val ranked = rankRelatedNotes(noteId, vector)
 
             val maxSimilarity = ranked.firstOrNull()?.confidence ?: 0f
-            updateProgress(noteId, note.sourceTitle, ProcessingStage.UNDERSTAND, 0.62f, "正在生成摘要和标签")
+            updateProgress(noteId, note.sourceTitle, ProcessingStage.UNDERSTAND, 0.62f, "正在生成摘要和标签(重新生成)")
             val ai = blueLM.enrichNote(content, maxSimilarity)
             if (noteRepository.getNote(noteId) == null) {
                 removeProgress(noteId)
                 return@withContext
             }
+            val resolvedTitle = if (note.sourceTitle.isBlank() || note.sourceTitle in PLACEHOLDER_TITLES) {
+                ai.title.ifBlank { note.sourceTitle }
+            } else {
+                note.sourceTitle
+            }
             val enriched = note.copy(
                 ocrText = material.ocrText.ifBlank { null },
+                sourceTitle = resolvedTitle,
                 noteContent = content,
                 summary = ai.summary,
                 tags = JsonText.encodeList(sanitizeTags(ai.tags, ai.topic)),
@@ -363,26 +375,22 @@ class NoteProcessor(
     private suspend fun buildLearningMaterial(note: NoteEntity, fallbackTitle: String): LearningMaterial {
         val ocrText = recognizeImageText(note)
         val webText = extractWebText(note.url)
-        val baseContent = normalizeContent(note.rawText.orEmpty(), ocrText, webText)
+        val baseContent = normalizeContent(note.rawText.orEmpty(), "", webText)
         val rawImageDesc = if (note.imagePath.hasLocalImage()) {
-            blueLM.describeImage(note.imagePath.orEmpty(), baseContent)
+            blueLM.describeImage(note.imagePath.orEmpty(), normalizeContent(note.rawText.orEmpty(), ocrText, webText))
         } else {
             ""
         }
         val (imageDescription, reviewHints) = splitReviewHints(rawImageDesc)
-        val ocrLen = ocrText.length
-        val imgDescLen = imageDescription.length
-        val effectiveBase = if (ocrLen > 0 && imgDescLen > 0 && ocrLen < imgDescLen * 0.5f) {
-            normalizeContent(note.rawText.orEmpty(), "", webText)
+        val polishInput = listOfNotNull(
+            baseContent.ifBlank { null },
+            ocrText.ifBlank { null },
+            imageDescription.ifBlank { null }
+        ).joinToString("\n\n").ifBlank { fallbackTitle }
+        val polished = if (polishInput != fallbackTitle) {
+            runCatching { blueLM.polishRecognitionText(polishInput) }.getOrDefault(polishInput)
         } else {
-            baseContent
-        }
-        val rawMerged = normalizeContent(effectiveBase, imageDescription, "")
-            .ifBlank { fallbackTitle }
-        val polished = if (rawMerged.isNotBlank() && rawMerged != fallbackTitle) {
-            runCatching { blueLM.polishRecognitionText(rawMerged) }.getOrDefault(rawMerged)
-        } else {
-            rawMerged
+            fallbackTitle
         }
         val contentWithHints = if (reviewHints.isNotBlank()) {
             "$polished\n<!--EXTRAS-->\n$reviewHints"
@@ -499,6 +507,8 @@ class NoteProcessor(
 
 private const val REVIEW_CARD_RELATED_MIN_SIMILARITY = 0.78f
 private const val REVIEW_CARD_RELATED_MIN_RELATION = 0.70f
+
+private val PLACEHOLDER_TITLES = setOf("未命名收藏", "分享采集", "浮窗采集")
 
 private enum class ProcessingStage(val title: String) {
     QUEUED("排队"),
