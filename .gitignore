@@ -3,5 +3,8 @@
 .idea/
 build/
 local.properties
+*.env
+.env
+server/.env
 captures/
 *.iml
