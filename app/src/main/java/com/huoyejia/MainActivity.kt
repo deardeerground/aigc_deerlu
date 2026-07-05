@@ -163,14 +163,16 @@ class MainActivity : ComponentActivity() {
                         startDestination = "collections",
                         modifier = Modifier.fillMaxSize(),
                         enterTransition = {
-                            val dir = tabNavDirection.value
+                            val targetInMainTabs = targetState.destination.route in mainRoutes
+                            val dir = if (targetInMainTabs) tabNavDirection.value else 1f
                             slideInHorizontally(
                                 initialOffsetX = { fullWidth: Int -> (fullWidth * dir).toInt() },
                                 animationSpec = tween(300)
                             ) + fadeIn(animationSpec = tween(300))
                         },
                         exitTransition = {
-                            val dir = tabNavDirection.value
+                            val targetInMainTabs = targetState.destination.route in mainRoutes
+                            val dir = if (targetInMainTabs) tabNavDirection.value else 1f
                             slideOutHorizontally(
                                 targetOffsetX = { fullWidth: Int -> (-fullWidth * dir).toInt() },
                                 animationSpec = tween(300)

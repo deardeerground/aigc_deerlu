@@ -38,6 +38,8 @@ class MockBlueLMAdapter : BlueLMAdapter {
         return "未识别成功，原因可能为未配置支持图片输入的视觉理解模型、图片文件不可读，或当前只启用了本地兜底模式。图片文件：$fileName。"
     }
 
+    override suspend fun polishRecognitionText(rawText: String): String = rawText
+
     override suspend fun embed(text: String, imagePath: String?): FloatArray {
         val vector = FloatArray(48)
         val imageHint = imagePath?.takeIf { it.isNotBlank() }?.let { " 图片 截图 视觉资料 ${it.substringAfterLast('/').substringAfterLast('\\')}" }.orEmpty()

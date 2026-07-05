@@ -145,16 +145,13 @@ fun CollectionDetailScreen(
                     }
                 },
                 actions = {
-                    // 搜索功能已禁用，暂时移除搜索按钮
-                    // IconButton(onClick = {
-                    //     navController.navigate("search")
-                    // }) {
-                    //     Icon(
-                    //         imageVector = Icons.Default.Search,
-                    //         contentDescription = "搜索",
-                    //         tint = MaterialTheme.colorScheme.onPrimary
-                    //     )
-                    // }
+                    Text(
+                        text = "${filteredNotes.size} 张卡片",
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 16.dp)
+                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.White.copy(alpha = 0.84f),
@@ -170,20 +167,6 @@ fun CollectionDetailScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // 标题下方辅助文字：卡片数量统计
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
-            ) {
-                Text(
-                    text = "${filteredNotes.size} 张卡片",
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
             // 主体内容区：卡片列表
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),

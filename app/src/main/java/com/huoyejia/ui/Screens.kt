@@ -1977,10 +1977,9 @@ fun NoteDetailScreen(
 private fun SourceMaterialCard(note: NoteEntity) {
     val context = LocalContext.current
     val originalText = cleanOriginalText(note.rawText.orEmpty())
-    val recognizedText = cleanOriginalText(
+    val recognizedText = beautifyText(
         listOfNotNull(
-            note.ocrText?.takeIf { it.isNotBlank() }?.let { "OCR 识别：\n$it" },
-            note.noteContent.takeIf { it.isNotBlank() && it != note.rawText }?.let { "AI 整理/图片理解：\n$it" }
+            note.noteContent.takeIf { it.isNotBlank() && it != note.rawText }
         ).joinToString("\n\n")
     ).ifBlank {
         if (!note.imagePath.isNullOrBlank()) {
@@ -2570,6 +2569,7 @@ private fun suggestedQuestions(
 
 private fun cleanOriginalText(text: String): String {
     return text
+        .substringBefore("<!--EXTRAS-->")
         .lines()
         .filterNot { line ->
             val trimmed = line.trim()
@@ -2582,7 +2582,46 @@ private fun cleanOriginalText(text: String): String {
         }
         .joinToString("\n")
         .trim()
-        .ifBlank { text.trim() }
+        .ifBlank { text.substringBefore("<!--EXTRAS-->").trim() }
+}
+
+private fun beautifyText(text: String): String {
+    if (text.isBlank()) return text
+    return text
+        .substringBefore("<!--EXTRAS-->")
+        .replace(Regex("```\\w*\\n?|```"), "")
+        .replace(Regex("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]"), "")
+        .replace(Regex("\\n{3,}"), "\n\n")
+        .replace(Regex(" {2,}"), " ")
+        .replace(Regex("\\n\\s*\\n"), "\n\n")
+        .lines()
+        .map { it.trimEnd() }
+        .filter { it.isNotBlank() || it == "" }
+        .joinToString("\n")
+        .trim()
+}
+
+private fun cleanOcrText(text: String): String {
+    if (text.isBlank()) return text
+    var result = text
+        .replace(Regex("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]"), "")
+        .replace(Regex(" {2,}"), "")
+    val hasChinese = result.any { it in '\u4E00'..'\u9FFF' }
+    if (hasChinese) {
+        result = result
+            .replace(Regex("(?<=[\\u4E00-\\u9FFF\\u3400-\\u4DBF])\\s+(?=[\\u4E00-\\u9FFF\\u3400-\\u4DBF])"), "")
+            .replace(Regex("([，。！？；：、])[\\s\\n]+"), "$1")
+            .replace(Regex("[\\s\\n]+([，。！？；：、])"), "$1")
+            .replace(Regex("\\n(?=[\\u4E00-\\u9FFF\\u3400-\\u4DBF])"), "")
+    }
+    result = result
+        .replace(Regex("\\n{2,}"), "\n")
+        .lines()
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .joinToString("\n")
+        .trim()
+    return result.ifBlank { text.trim() }
 }
 
 private fun openUrl(context: Context, url: String) {

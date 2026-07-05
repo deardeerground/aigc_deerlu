@@ -101,13 +101,13 @@ class RemoteBlueLMAdapter(
                         你是学习资料图像理解助手。
                         请理解用户上传的图片，把它转换成后续可摘要、可打标签、可生成复习卡的中文学习内容。
                         如果图片是图表、流程图、手写板书、知识截图、地图、实验图、商品图或 UI 截图，都要描述主体、关键信息、结构关系和可能的学习主题。
-                        不要编造看不见的文字；如果有不确定内容，用“可能”说明。
+                        不要编造看不见的文字；如果有不确定内容，用"可能"说明。
 
                         请用中文输出 120 到 220 字的图片学习描述。
                         输出应包含：
                         1. 画面/截图里主要有什么；
-                        2. 能提炼出的知识点或主题；
-                        3. 适合生成复习卡的问题方向。
+                        2. 在末尾用【知识点】列出能从中提炼出的知识点或主题，每个一行；
+                        3. 在末尾用【复习方向】列出 1-2 个适合生成复习卡的问题方向，每个一行。
                         用户补充文本：${contextText.ifBlank { "无" }}
                     """.trimIndent()
                     val response = if (visionEndpoint.path.contains("responses")) {
@@ -138,6 +138,23 @@ class RemoteBlueLMAdapter(
                 }
             },
             fallbackCall = { fallback.describeImage(imagePath, contextText) }
+        )
+    }
+
+    override suspend fun polishRecognitionText(rawText: String): String {
+        return runRemoteOrFallback(
+            ready = config.chatReady,
+            remoteCall = {
+                withContext(Dispatchers.IO) {
+                    val messages = JSONArray()
+                        .put(JSONObject().put("role", "system").put("content",
+                            "你是学习内容整理助手。请将以下OCR和图像识别的原始结果整理成通顺、无病句、一气呵成的中文段落。保留所有知识点信息，修复断句、错字、乱码和格式问题。直接输出整理后的文本，不要加任何说明或标记。"))
+                        .put(JSONObject().put("role", "user").put("content", rawText))
+                    val response = postChat(messages, temperature = 0.2)
+                    extractTextResponse(response).trim().ifBlank { rawText }
+                }
+            },
+            fallbackCall = { rawText }
         )
     }
 

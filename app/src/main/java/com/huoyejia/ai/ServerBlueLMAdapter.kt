@@ -54,6 +54,13 @@ class ServerBlueLMAdapter(
         return fallback.describeImage(imagePath, contextText)
     }
 
+    override suspend fun polishRecognitionText(rawText: String): String {
+        return runServerOrFallback({
+            postJson("/api/polish-recognition", JSONObject().put("raw_text", rawText))
+                .optString("polished_text", rawText)
+        }, { fallback.polishRecognitionText(rawText) })
+    }
+
     override suspend fun embed(text: String, imagePath: String?): FloatArray {
         return runServerOrFallback({
             val json = postJson("/api/embed", JSONObject().apply {

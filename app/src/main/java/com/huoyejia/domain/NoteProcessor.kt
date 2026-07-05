@@ -273,6 +273,7 @@ class NoteProcessor(
             noteRepository.updateProcessedStatus(noteId, "PROCESSING")
             relationRepository.deleteForNote(noteId)
             reviewCardRepository.deleteForNote(noteId)
+            noteRepository.deleteEmbedding(noteId)
             updateProgress(noteId, note.sourceTitle, ProcessingStage.READ_SOURCE, 0.22f, "正在读取截图和网页内容")
             val material = buildLearningMaterial(note, note.sourceTitle)
             val content = material.content
@@ -363,18 +364,49 @@ class NoteProcessor(
         val ocrText = recognizeImageText(note)
         val webText = extractWebText(note.url)
         val baseContent = normalizeContent(note.rawText.orEmpty(), ocrText, webText)
-        val imageDescription = if (note.imagePath.hasLocalImage() && baseContent.length < 80) {
+        val rawImageDesc = if (note.imagePath.hasLocalImage()) {
             blueLM.describeImage(note.imagePath.orEmpty(), baseContent)
         } else {
             ""
         }
-        val content = normalizeContent(baseContent, imageDescription, "")
+        val (imageDescription, reviewHints) = splitReviewHints(rawImageDesc)
+        val ocrLen = ocrText.length
+        val imgDescLen = imageDescription.length
+        val effectiveBase = if (ocrLen > 0 && imgDescLen > 0 && ocrLen < imgDescLen * 0.5f) {
+            normalizeContent(note.rawText.orEmpty(), "", webText)
+        } else {
+            baseContent
+        }
+        val rawMerged = normalizeContent(effectiveBase, imageDescription, "")
             .ifBlank { fallbackTitle }
+        val polished = if (rawMerged.isNotBlank() && rawMerged != fallbackTitle) {
+            runCatching { blueLM.polishRecognitionText(rawMerged) }.getOrDefault(rawMerged)
+        } else {
+            rawMerged
+        }
+        val contentWithHints = if (reviewHints.isNotBlank()) {
+            "$polished\n<!--EXTRAS-->\n$reviewHints"
+        } else {
+            polished
+        }
         return LearningMaterial(
-            content = content,
+            content = contentWithHints,
             ocrText = ocrText,
             imageDescription = imageDescription
         )
+    }
+
+    private fun splitReviewHints(text: String): Pair<String, String> {
+        val markers = listOf("【知识点】", "【复习方向】")
+        val firstMarkerIdx = markers.mapNotNull { marker ->
+            val idx = text.indexOf(marker)
+            if (idx >= 0) idx to marker else null
+        }.minByOrNull { it.first }
+        if (firstMarkerIdx == null) return Pair(text, "")
+        val (splitIdx, _) = firstMarkerIdx
+        val description = text.substring(0, splitIdx).trim()
+        val extras = text.substring(splitIdx).trim()
+        return Pair(description.ifBlank { text }, extras)
     }
 
     private fun normalizeContent(raw: String, ocr: String, web: String): String {
@@ -394,11 +426,16 @@ class NoteProcessor(
     private fun String.sanitizeRecognizedText(): String {
         val clean = trim()
         if (clean.isBlank()) return ""
-        val garbledMarks = listOf("锟斤拷", "�", "Ã", "Â", "Ð", "�")
+        val garbledMarks = listOf(
+            "锟斤拷", "銆", "�", "Ã", "Â", "Ð", "Ã©", "Ã¼",
+            "â\u0080\u0099", "â\u0080\u009C", "â\u0080", "ï¼",
+            "ã\u0080", "ä¸", "è¿", "æ\u0098¯"
+        )
         val garbledHits = garbledMarks.count { clean.contains(it) }
         val visibleChars = clean.count { !it.isWhitespace() }.coerceAtLeast(1)
         val replacementRatio = clean.count { it == '�' }.toFloat() / visibleChars
-        return if (garbledHits >= 2 || replacementRatio > 0.04f) {
+        val hasHighByteCorruption = clean.any { it in '\u0080'..'\u009F' }
+        return if (garbledHits >= 2 || replacementRatio > 0.04f || (hasHighByteCorruption && replacementRatio > 0.02f)) {
             "未识别成功，原因可能为文本编码异常、网页返回乱码、图片质量过低或模型返回内容不可读。"
         } else {
             clean

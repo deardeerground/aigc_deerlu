@@ -59,6 +59,8 @@ class NoteRepository(
 
     suspend fun saveEmbedding(embedding: NoteEmbeddingEntity) = embeddingDao.upsert(embedding)
 
+    suspend fun deleteEmbedding(noteId: String) = embeddingDao.deleteForNote(noteId)
+
     suspend fun deleteNote(noteId: String) {
         embeddingDao.deleteForNote(noteId)
         noteDao.deleteNote(noteId)

@@ -19,4 +19,5 @@ interface BlueLMAdapter {
     suspend fun answerCardQuestion(current: NoteEntity, related: List<NoteEntity>, question: String): String
     suspend fun generateSlideImage(prompt: String): ByteArray?
     suspend fun generateAnimationHtml(pack: ExplainPack): String?
+    suspend fun polishRecognitionText(rawText: String): String
 }
