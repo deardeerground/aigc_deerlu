@@ -77,11 +77,12 @@ class MockBlueLMAdapter : BlueLMAdapter {
         relationHint: String
     ): ReviewCardDraft {
         val relatedTopic = related.firstOrNull()?.topic ?: "已有收藏"
+        val currentTopic = current.topic ?: current.sourceTitle
         val question = when (relationHint) {
-            "contrast" -> "这条内容和「$relatedTopic」在哪个关键判断上不同？这种差异会影响你的结论吗？"
-            "cause_effect" -> "如果把这条内容放进因果链，它和「$relatedTopic」分别处在原因、过程还是结果的位置？"
-            "same_topic" -> "把这条内容补进「$relatedTopic」主题后，你能得到一个更完整的解释框架吗？"
-            else -> "这条新收藏能补充哪一条旧笔记？请用一句话说明它们的联系。"
+            "contrast" -> "围绕「$currentTopic」：它和「$relatedTopic」在哪个关键判断上不同？"
+            "cause_effect" -> "围绕「$currentTopic」：它在因果链里更像原因、过程还是结果？"
+            "same_topic" -> "围绕「$currentTopic」：你能用一句话补全它的核心解释框架吗？"
+            else -> "围绕「$currentTopic」：请用一句话说清它的核心知识点，并给一个应用例子。"
         }
         val explanation = "不要只复述原文，先找连接点：概念、例子、原因、反例或应用场景。这样收藏会进入可复习的知识结构。"
         val difficulty = if (related.size >= 2) "medium" else "easy"

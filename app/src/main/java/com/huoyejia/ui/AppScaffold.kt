@@ -3,7 +3,7 @@ package com.huoyejia.ui
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -111,14 +111,25 @@ fun HuoyejiaScaffold(
                 .padding(padding)
                 .background(MaterialTheme.colorScheme.background)
                 .pointerInput(current) {
-                    var dragAmount = 0f
-                    detectHorizontalDragGestures(
-                        onDragStart = { dragAmount = 0f },
-                        onHorizontalDrag = { _, amount -> dragAmount += amount },
+                    var horizontalDrag = 0f
+                    var verticalDrag = 0f
+                    detectDragGestures(
+                        onDragStart = {
+                            horizontalDrag = 0f
+                            verticalDrag = 0f
+                        },
+                        onDrag = { change, amount ->
+                            horizontalDrag += amount.x
+                            verticalDrag += amount.y
+                            if (kotlin.math.abs(horizontalDrag) > kotlin.math.abs(verticalDrag) * 1.25f) {
+                                change.consume()
+                            }
+                        },
                         onDragEnd = {
                             val currentIndex = tabs.indexOfFirst { it.route == current }
-                            if (currentIndex >= 0 && kotlin.math.abs(dragAmount) > 90f) {
-                                val nextIndex = if (dragAmount < 0) currentIndex + 1 else currentIndex - 1
+                            val isHorizontalIntent = kotlin.math.abs(horizontalDrag) > kotlin.math.abs(verticalDrag) * 1.35f
+                            if (currentIndex >= 0 && isHorizontalIntent && kotlin.math.abs(horizontalDrag) > 64f) {
+                                val nextIndex = if (horizontalDrag < 0) currentIndex + 1 else currentIndex - 1
                                 tabs.getOrNull(nextIndex)?.let { navigateToMainTab(it.route) }
                             }
                         }
@@ -126,6 +137,13 @@ fun HuoyejiaScaffold(
                 }
         ) {
             content(PaddingValues(0.dp))
+            if (tabs.any { it.route == current }) {
+                SwipeHintPill(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 10.dp)
+                )
+            }
             if (isBusy) {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -143,6 +161,23 @@ fun HuoyejiaScaffold(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SwipeHintPill(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(50),
+        color = Color.White.copy(alpha = 0.62f),
+        border = techPanelBorder(alpha = 0.48f)
+    ) {
+        Text(
+            "← 左右滑动切换页面 →",
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.78f),
+            style = MaterialTheme.typography.labelSmall
+        )
     }
 }
 

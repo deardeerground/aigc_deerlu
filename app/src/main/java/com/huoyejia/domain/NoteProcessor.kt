@@ -195,8 +195,19 @@ class NoteProcessor(
         ranked: List<RelatedNote>
     ) {
         if (noteRepository.getNote(current.noteId) == null) return
-        val related = ranked.take(3).map { it.note }
-        val relationHint = relations.firstOrNull()?.relationType ?: "relation"
+        val relationByTarget = relations.associateBy { it.noteIdTo }
+        val related = ranked
+            .filter { candidate ->
+                val relation = relationByTarget[candidate.note.noteId]
+                candidate.confidence >= REVIEW_CARD_RELATED_MIN_SIMILARITY &&
+                    relation != null &&
+                    relation.confidence >= REVIEW_CARD_RELATED_MIN_RELATION
+            }
+            .take(1)
+            .map { it.note }
+        val relationHint = related.firstOrNull()
+            ?.let { relationByTarget[it.noteId]?.relationType }
+            ?: "single_note"
         val draft = blueLM.generateReviewCard(current, related, relationHint)
         if (noteRepository.getNote(current.noteId) == null) return
         val now = System.currentTimeMillis()
@@ -448,6 +459,9 @@ class NoteProcessor(
         return message ?: defaultMessage
     }
 }
+
+private const val REVIEW_CARD_RELATED_MIN_SIMILARITY = 0.78f
+private const val REVIEW_CARD_RELATED_MIN_RELATION = 0.70f
 
 private enum class ProcessingStage(val title: String) {
     QUEUED("排队"),

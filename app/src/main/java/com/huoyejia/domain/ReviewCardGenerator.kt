@@ -31,12 +31,20 @@ class ReviewCardGenerator(
     
     private suspend fun generateReviewCardForNote(note: NoteEntity) {
         val relations = relationRepository.getForNote(note.noteId)
-        val allNotes = noteRepository.loadAllNotes().filter { it.noteId != note.noteId }
-        
-        if (allNotes.isEmpty()) return
-        
-        val relatedNotes = allNotes.take(3)
-        val relationHint = relations.firstOrNull()?.relationType ?: "relation"
+        val notesById = noteRepository.loadAllNotes()
+            .filter { it.noteId != note.noteId }
+            .associateBy { it.noteId }
+        val selectedRelation = relations
+            .filter { it.confidence >= REVIEW_CARD_GENERATOR_MIN_RELATION }
+            .maxByOrNull { it.confidence }
+        val relatedNotes = selectedRelation
+            ?.let { relation ->
+                val relatedId = if (relation.noteIdFrom == note.noteId) relation.noteIdTo else relation.noteIdFrom
+                notesById[relatedId]
+            }
+            ?.let { listOf(it) }
+            .orEmpty()
+        val relationHint = selectedRelation?.relationType ?: "single_note"
         
         val draft = blueLM.generateReviewCard(note, relatedNotes, relationHint)
         
@@ -63,3 +71,5 @@ class ReviewCardGenerator(
         return true
     }
 }
+
+private const val REVIEW_CARD_GENERATOR_MIN_RELATION = 0.70f

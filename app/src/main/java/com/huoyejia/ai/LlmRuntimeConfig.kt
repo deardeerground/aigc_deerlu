@@ -15,6 +15,7 @@ data class LlmEndpointConfig(
 data class LlmRuntimeConfig(
     val chat: LlmEndpointConfig,
     val embedding: LlmEndpointConfig,
+    val vision: LlmEndpointConfig,
     val image: ImageEndpointConfig,
     val video: VideoEndpointConfig
 ) {
@@ -26,6 +27,9 @@ data class LlmRuntimeConfig(
 
     val embeddingReady: Boolean
         get() = embedding.isComplete
+
+    val visionReady: Boolean
+        get() = vision.isComplete
 
     val imageReady: Boolean
         get() = image.isComplete
@@ -47,6 +51,12 @@ data class LlmRuntimeConfig(
                     apiKey = BuildConfig.LLM_EMBEDDING_API_KEY.trim(),
                     model = BuildConfig.LLM_EMBEDDING_MODEL.trim(),
                     path = BuildConfig.LLM_EMBEDDING_PATH.trim().ifBlank { "/embeddings" }
+                ),
+                vision = LlmEndpointConfig(
+                    baseUrl = BuildConfig.LLM_VISION_BASE_URL.trim().removeSuffix("/"),
+                    apiKey = BuildConfig.LLM_VISION_API_KEY.trim(),
+                    model = BuildConfig.LLM_VISION_MODEL.trim(),
+                    path = BuildConfig.LLM_VISION_PATH.trim().ifBlank { "/responses" }
                 ),
                 image = ImageEndpointConfig(
                     baseUrl = BuildConfig.LLM_IMAGE_BASE_URL.trim().removeSuffix("/"),

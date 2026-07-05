@@ -383,3 +383,76 @@ LLM_CHAT_PATH=/responses
 
 - 后端 URL 抽取失败时返回明确失败原因。
 - 后端处理流水线会过滤明显乱码识别结果。
+
+## 2026-07-05 回流卡片隔离与图片识别诊断日志
+
+本次优化复习卡“串题 / AI 污染”问题，并补充纯图片识别排查约定。
+
+### 1. 回流卡片隔离
+
+App 端生成复习卡时：
+
+- 默认只围绕当前卡片生成问题。
+- 只有当向量相似度 `>= 0.78` 且关系置信度 `>= 0.70` 时，才会带入 1 条强相关卡片。
+- 关联卡片只能作为轻量对比/补充线索，不允许成为题目主体。
+
+后端 `/api/generate-review-card` 已同步支持：
+
+```json
+{
+  "current": "当前卡片正文",
+  "current_title": "当前卡片标题",
+  "related": ["最多一条强相关卡片正文"],
+  "relation_hint": "single_note|contrast|cause_effect|same_topic|...",
+  "isolation_policy": "only_current_note; related_optional_max_one; do_not_mix_topics"
+}
+```
+
+后端实现要求：
+
+- prompt 必须明确“题目必须围绕当前笔记标题或核心概念”。
+- 不要把 `related` 当成连续对话上下文。
+- 每次请求必须独立调用模型，不复用上一张卡片的 messages/history。
+
+### 2. 纯图片识别排查
+
+如果“上传纯图片不能理解”，优先检查：
+
+- 优先配置独立视觉理解模型：`LLM_VISION_BASE_URL`、`LLM_VISION_API_KEY`、`LLM_VISION_MODEL`、`LLM_VISION_PATH`。
+- 如果没有配置 `LLM_VISION_*`，App 才会退回使用 `LLM_CHAT_*` 做图片理解。
+- 使用火山方舟 Responses API 时，`LLM_VISION_PATH` 或 `LLM_CHAT_PATH` 应为 `/responses`。
+- `LLM_VISION_MODEL` 或兜底的 `LLM_CHAT_MODEL` 必须为支持 `input_image` 的视觉理解模型。
+- `LLM_IMAGE_MODEL` 只负责生成图片，不负责看图。
+- 如果启用了 `SERVER_BASE_URL`，当前后端仍需要新增 `/api/describe-image` 才能完全后端代理图片理解；否则 App 会 fallback 到直连视觉模型。
+
+App 端独立视觉理解配置示例：
+
+```properties
+LLM_VISION_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+LLM_VISION_API_KEY=你的火山方舟APIKey
+LLM_VISION_MODEL=doubao-seed-2-1-pro-260628
+LLM_VISION_PATH=/responses
+```
+
+后端后续如要接管图片理解，建议新增：
+
+```http
+POST /api/describe-image
+```
+
+请求体建议：
+
+```json
+{
+  "image_base64": "data:image/jpeg;base64,...",
+  "context_text": "用户补充文本，可为空"
+}
+```
+
+返回体建议：
+
+```json
+{
+  "description": "图片可提炼出的中文学习内容；失败时返回“未识别成功，原因可能为...”"
+}
+```

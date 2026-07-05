@@ -732,6 +732,7 @@ fun DashboardScreen(
     val confusionItems = remember(notes, cards, relations) {
         buildConfusionItems(notes, cards, relations)
     }
+    var selectedModule by remember { mutableStateOf(DashboardModule.Report) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -750,8 +751,12 @@ fun DashboardScreen(
         ) {
             Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(value.toString(), color = Color.White, fontSize = 54.sp, fontWeight = FontWeight.Black)
-                ProgressBar(value / 100f)
-                Text(stats?.indexReason ?: "正在计算学习状态...", color = Color.White.copy(alpha = 0.92f), lineHeight = 20.sp)
+                IndexProgressBar(value / 100f)
+                Text(
+                    stats?.indexReason ?: "正在计算学习状态...",
+                    color = Color.White.copy(alpha = 0.92f),
+                    lineHeight = 20.sp
+                )
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -760,12 +765,17 @@ fun DashboardScreen(
             MetricPill("待处理", "${analytics.unprocessedPercent}%")
         }
         LearningHealthPanel(analytics)
-        LearningReportPanel(learningReport)
-        ConfusionReviewPanel(confusionItems)
-        FolderProgressPanel(analytics.folderProgress)
-        TagKnowledgePanel(analytics.tagStats)
-        WeeklyTrendPanel(analytics.weeklyTrend)
-        AssistCard("答辩亮点", "统计页现在可以一键生成学习报告，并自动整理易混点；卡片问答会标注回答依据，能更好回应 AIGC 可信度和学习闭环问题。")
+        DashboardModuleGrid(
+            selected = selectedModule,
+            onSelect = { selectedModule = it }
+        )
+        when (selectedModule) {
+            DashboardModule.Report -> LearningReportPanel(learningReport)
+            DashboardModule.Confusion -> ConfusionReviewPanel(confusionItems)
+            DashboardModule.Folders -> FolderProgressPanel(analytics.folderProgress)
+            DashboardModule.Tags -> TagKnowledgePanel(analytics.tagStats)
+            DashboardModule.Trend -> WeeklyTrendPanel(analytics.weeklyTrend)
+        }
     }
 }
 
@@ -811,6 +821,18 @@ private data class ConfusionItem(
     val action: String,
     val severity: Float
 )
+
+private enum class DashboardModule(
+    val title: String,
+    val subtitle: String,
+    val symbol: String
+) {
+    Report("学习报告", "一键答辩稿", "AI"),
+    Confusion("错题易混", "点击展开整理", "Q"),
+    Folders("收藏夹进度", "分组完成度", "F"),
+    Tags("标签数量", "知识点分布", "T"),
+    Trend("本周趋势", "新增与复习", "W")
+}
 
 private fun buildLearningAnalytics(
     notes: List<NoteEntity>,
@@ -995,19 +1017,148 @@ private fun buildConfusionItems(
 }
 
 @Composable
+private fun DashboardModuleGrid(
+    selected: DashboardModule,
+    onSelect: (DashboardModule) -> Unit
+) {
+    StatsPanel(title = "指数板块") {
+        DashboardModule.values().toList().chunked(2).forEach { rowItems ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                rowItems.forEach { item ->
+                    DashboardModuleButton(
+                        module = item,
+                        selected = item == selected,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onSelect(item) }
+                    )
+                }
+                if (rowItems.size == 1) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+        TinyText("左右滑动可切换主页面；这里点击小板块切换统计内容。")
+    }
+}
+
+@Composable
+private fun DashboardModuleButton(
+    module: DashboardModule,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(22.dp)
+    val background = if (selected) {
+        TechPrimaryGradient
+    } else {
+        Brush.linearGradient(listOf(Color.White.copy(alpha = 0.82f), Color(0xFFEAF6FF).copy(alpha = 0.72f)))
+    }
+    Surface(
+        modifier = modifier
+            .pressMicroInteraction(shape = shape)
+            .clickable(onClick = onClick),
+        shape = shape,
+        color = Color.Transparent,
+        border = BorderStroke(
+            1.dp,
+            if (selected) Color.White.copy(alpha = 0.55f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .background(background)
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = if (selected) Color.White.copy(alpha = 0.18f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = if (selected) 0.30f else 0.0f))
+            ) {
+                Text(
+                    module.symbol,
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+                    fontWeight = FontWeight.Black,
+                    color = if (selected) Color.White else MaterialTheme.colorScheme.primary
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    module.title,
+                    fontWeight = FontWeight.Black,
+                    color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    module.subtitle,
+                    fontSize = 11.sp,
+                    color = if (selected) Color.White.copy(alpha = 0.82f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun LearningReportPanel(report: LearningReport) {
     val context = LocalContext.current
+    var expanded by remember(report.body) { mutableStateOf(false) }
+    val reportShape = RoundedCornerShape(30.dp)
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(26.dp),
-        colors = techCardColors(),
-        border = techPanelBorder()
+        shape = reportShape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        border = BorderStroke(1.dp, Color(0xFF6FC7FF).copy(alpha = 0.60f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            modifier = Modifier
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            Color(0xF6FFFFFF),
+                            Color(0xEAF0F8FF),
+                            Color(0xDDE7F3FF)
+                        )
+                    )
+                )
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(13.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("一键学习报告", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary, fontSize = 20.sp)
-                    TinyText("自动把收藏、复习、标签和知识关联整理成可汇报文本。")
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
+                ) {
+                    Text(
+                        "AI",
+                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Black
+                    )
+                }
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Text("一键学习报告", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary, fontSize = 22.sp)
+                    Text(
+                        "收藏、复习、标签和知识关联已整理为可汇报文本",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
                 }
                 Button(onClick = {
                     copyText(context, "学习报告", "${report.title}\n\n${report.body}")
@@ -1024,14 +1175,77 @@ private fun LearningReportPanel(report: LearningReport) {
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
                     ) {
                         Column(Modifier.padding(horizontal = 11.dp, vertical = 8.dp)) {
-                            Text(value, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                value,
+                                fontWeight = FontWeight.Black,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontSize = 15.sp,
+                                lineHeight = 19.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
                             Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f))
                         }
                     }
                 }
             }
-            SelectionContainer {
-                Text(report.body, lineHeight = 20.sp)
+            ReportBodyExpander(
+                report = report,
+                expanded = expanded,
+                onToggle = { expanded = !expanded }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReportBodyExpander(
+    report: LearningReport,
+    expanded: Boolean,
+    onToggle: () -> Unit
+) {
+    val shape = RoundedCornerShape(24.dp)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .pressMicroInteraction(shape = shape)
+            .clickable(onClick = onToggle),
+        shape = shape,
+        color = if (expanded) Color.White.copy(alpha = 0.82f) else Color(0xFFE7F4FF).copy(alpha = 0.80f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = if (expanded) 0.26f else 0.16f))
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("报告正文", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary, fontSize = 17.sp)
+                    TinyText(if (expanded) "点击收起，页面会恢复简洁。" else "正文已收纳，点击展开完整汇报稿。")
+                }
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = if (expanded) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.primary,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
+                ) {
+                    Text(
+                        if (expanded) "收起" else "展开",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        color = if (expanded) MaterialTheme.colorScheme.primary else Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+            if (expanded) {
+                SelectionContainer {
+                    Text(report.body, lineHeight = 20.sp)
+                }
+            } else {
+                Text(
+                    report.body.lineSequence().firstOrNull().orEmpty().ifBlank { report.title },
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+                    lineHeight = 18.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -1039,14 +1253,20 @@ private fun LearningReportPanel(report: LearningReport) {
 
 @Composable
 private fun ConfusionReviewPanel(items: List<ConfusionItem>) {
+    var expandedKey by remember(items) { mutableStateOf<String?>(null) }
     StatsPanel(title = "错题 / 易混点自动整理") {
         if (items.isEmpty()) {
             TinyText("暂无明显易混点。完成更多复习卡或建立更多关联后，这里会自动整理。")
         } else {
-            items.forEach { item ->
+            items.forEachIndexed { index, item ->
+                val key = "${item.title}-$index"
+                val expanded = expandedKey == key
                 val shape = RoundedCornerShape(18.dp)
                 Surface(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .pressMicroInteraction(shape = shape)
+                        .clickable { expandedKey = if (expanded) null else key },
                     shape = shape,
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.66f),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
@@ -1056,8 +1276,14 @@ private fun ConfusionReviewPanel(items: List<ConfusionItem>) {
                             Text(item.title, modifier = Modifier.weight(1f), fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             StatusChip("风险${(item.severity * 100).toInt()}%")
                         }
-                        Text(item.reason, lineHeight = 19.sp)
-                        TinyText("建议：${item.action}")
+                        if (expanded) {
+                            Text(item.reason, lineHeight = 19.sp)
+                            TinyText("建议：${item.action}")
+                            TinyText("点击收起")
+                        } else {
+                            TinyText(item.reason.take(42) + if (item.reason.length > 42) "..." else "")
+                            Text("点击展开处理建议", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
                     }
                 }
             }
@@ -1075,11 +1301,56 @@ private fun LearningHealthPanel(analytics: LearningAnalytics) {
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("学习健康概览", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary, fontSize = 20.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MetricPill("未处理比例", "${analytics.unprocessedPercent}%")
-                MetricPill("重复率", "${analytics.duplicateRateNow}%")
-                MetricPill("重复变化", analytics.duplicateTrendLabel)
-            }
+            HealthProgressRow(
+                label = "未处理内容",
+                value = "${analytics.unprocessedPercent}%",
+                helper = "截图、网址或文字仍未完成 AI 整理的比例",
+                progress = analytics.unprocessedPercent / 100f
+            )
+            HealthProgressRow(
+                label = "重复收藏率",
+                value = "${analytics.duplicateRateNow}%",
+                helper = "越高越说明相似知识点反复进入收藏夹",
+                progress = analytics.duplicateRateNow / 100f
+            )
+            HealthBaselineRow(analytics.duplicateTrendLabel)
+        }
+    }
+}
+
+@Composable
+private fun HealthProgressRow(
+    label: String,
+    value: String,
+    helper: String,
+    progress: Float
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+            Text(value, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black, fontSize = 18.sp)
+        }
+        IndexProgressBar(progress, trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f))
+        TinyText(helper)
+    }
+}
+
+@Composable
+private fun HealthBaselineRow(label: String) {
+    val hasBaseline = label != "暂无上周基线"
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = if (hasBaseline) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.50f) else Color.White.copy(alpha = 0.60f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text("重复率变化", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Text(
+                label,
+                fontWeight = FontWeight.Black,
+                color = if (hasBaseline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            TinyText(if (hasBaseline) "用于观察重复收藏是否正在下降。" else "积累满一周后，会自动显示与上周相比的变化。")
         }
     }
 }
@@ -1098,7 +1369,10 @@ private fun FolderProgressPanel(items: List<FolderProgressStat>) {
                     }
                     LinearProgressIndicator(
                         progress = { item.progress.coerceIn(0f, 1f) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(12.dp)
+                            .clip(RoundedCornerShape(50)),
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -2609,6 +2883,33 @@ private fun ProgressBar(progress: Float) {
             modifier = Modifier
                 .fillMaxWidth(progress.coerceIn(0f, 1f))
                 .height(10.dp)
+        ) {}
+    }
+}
+
+@Composable
+private fun IndexProgressBar(
+    progress: Float,
+    trackColor: Color = Color.White.copy(alpha = 0.22f)
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(15.dp)
+            .clip(RoundedCornerShape(50))
+    ) {
+        Surface(color = trackColor, modifier = Modifier.fillMaxSize()) {}
+        Surface(
+            color = Color(0xFF78F1FF),
+            modifier = Modifier
+                .fillMaxWidth(progress.coerceIn(0f, 1f))
+                .height(15.dp)
+        ) {}
+        Surface(
+            color = Color.White.copy(alpha = 0.28f),
+            modifier = Modifier
+                .fillMaxWidth(progress.coerceIn(0f, 1f))
+                .height(5.dp)
         ) {}
     }
 }

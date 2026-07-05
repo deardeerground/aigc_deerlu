@@ -58,8 +58,10 @@ class ClassifyRelationRequest(PydanticBase):
 
 class GenerateReviewCardRequest(PydanticBase):
     current: str
+    current_title: str = ""
     related: list[str] = []
     relation_hint: str = "relation"
+    isolation_policy: str = "only_current_note"
 
 
 class GenerateExplainPackRequest(PydanticBase):
@@ -169,9 +171,14 @@ B={body.note_b}""",
 async def api_generate_review_card(body: GenerateReviewCardRequest, llm: LlmClient = Depends(get_llm)):
     if not llm.chat_ready:
         raise HTTPException(status_code=400, detail="聊天模型未配置")
+    related_text = "\n".join(body.related[:1]) or "无"
     ai = await llm.chat_json(
         system="你是学生学习教练。只返回 JSON，不要 markdown。",
-        user=f"""基于当前笔记和关联笔记生成一张认知回流卡。
+        user=f"""基于“当前笔记”生成一张认知回流卡。
+关键约束：
+1. 题目必须围绕当前笔记标题或核心概念，不得把多张卡片混成一个新主题。
+2. 关联笔记只允许作为一个轻量对比/补充线索；如果关联笔记为空，就只围绕当前笔记出题。
+3. 不要追问关联笔记本身的知识点，不要要求同时解释多个无关概念。
 返回 JSON:
 {{
   "question":"问题",
@@ -180,8 +187,10 @@ async def api_generate_review_card(body: GenerateReviewCardRequest, llm: LlmClie
   "card_type":"relation|contrast|cause_transfer"
 }}
 relationHint={body.relation_hint}
+current_title={body.current_title}
 current={body.current}
-related={chr(10).join(body.related)}""",
+related_optional={related_text}
+isolation_policy={body.isolation_policy}""",
     )
     return {
         "question": ai.get("question", "这条内容能补充你哪一条旧知识？"),

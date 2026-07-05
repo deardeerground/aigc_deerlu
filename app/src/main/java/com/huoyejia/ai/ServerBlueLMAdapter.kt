@@ -90,11 +90,15 @@ class ServerBlueLMAdapter(
         return runServerOrFallback({
             val json = postJson("/api/generate-review-card", JSONObject().apply {
                 put("current", current.noteContent)
+                put("current_title", current.sourceTitle)
                 put("related", JSONArray(related.map { it.noteContent }))
+                put("isolation_policy", "only_current_note; related_optional_max_one; do_not_mix_topics")
                 put("relation_hint", relationHint)
             })
             ReviewCardDraft(
-                question = json.optString("question").ifBlank { "这条内容能补充你哪一条旧知识？" },
+                question = json.optString("question")
+                    .ifBlank { "请用一句话说清它的核心知识点，并给一个应用例子。" }
+                    .anchorToCurrentNote(current),
                 explanation = json.optString("explanation").ifBlank { "先说出联系，再解释为什么重要。" },
                 difficulty = json.optString("difficulty").ifBlank { "medium" },
                 cardType = json.optString("card_type").ifBlank { "relation" }
@@ -249,4 +253,10 @@ private fun JSONArray.toScenes(): List<AnimationScene> {
             ))
         }
     }
+}
+
+private fun String.anchorToCurrentNote(current: NoteEntity): String {
+    val anchor = (current.topic ?: current.sourceTitle).trim().take(18)
+    if (anchor.isBlank() || contains(anchor)) return this
+    return "围绕「$anchor」：$this"
 }

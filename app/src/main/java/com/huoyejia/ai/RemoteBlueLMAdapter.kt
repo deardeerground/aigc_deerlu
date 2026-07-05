@@ -35,6 +35,7 @@ class RemoteBlueLMAdapter(
             val labels = buildList {
                 if (config.chatReady) add("Chat ${config.chat.model}")
                 if (config.embeddingReady) add("Embedding ${config.embedding.model}")
+                if (config.visionReady) add("Vision ${config.vision.model}")
                 if (config.imageReady) add("Image ${config.image.model}")
                 if (config.videoReady) add("Video ${config.video.model}")
             }
@@ -90,9 +91,10 @@ class RemoteBlueLMAdapter(
 
     override suspend fun describeImage(imagePath: String, contextText: String): String {
         return runRemoteOrFallback(
-            ready = config.chatReady,
+            ready = config.visionReady || config.chatReady,
             remoteCall = {
                 withContext(Dispatchers.IO) {
+                    val visionEndpoint = if (config.visionReady) config.vision else config.chat
                     val imageDataUrl = imagePath.toImageDataUrl(context)
                         ?: throw IllegalStateException("无法读取本地图片。")
                     val instruction = """
@@ -108,8 +110,8 @@ class RemoteBlueLMAdapter(
                         3. 适合生成复习卡的问题方向。
                         用户补充文本：${contextText.ifBlank { "无" }}
                     """.trimIndent()
-                    val response = if (config.chat.path.contains("responses")) {
-                        postJson(config.chat, config.chat.path, responsesPayload(instruction, imageDataUrl = imageDataUrl))
+                    val response = if (visionEndpoint.path.contains("responses")) {
+                        postJson(visionEndpoint, visionEndpoint.path, responsesPayload(instruction, imageDataUrl = imageDataUrl, model = visionEndpoint.model))
                     } else {
                         val messages = JSONArray()
                             .put(JSONObject().put("role", "system").put("content", instruction))
@@ -124,10 +126,10 @@ class RemoteBlueLMAdapter(
                                     )
                             )
                         postJson(
-                            config.chat,
-                            config.chat.path.ifBlank { "/chat/completions" },
+                            visionEndpoint,
+                            visionEndpoint.path.ifBlank { "/chat/completions" },
                             JSONObject()
-                                .put("model", config.chat.model)
+                                .put("model", visionEndpoint.model)
                                 .put("temperature", 0.2)
                                 .put("messages", messages)
                         )
@@ -223,7 +225,11 @@ class RemoteBlueLMAdapter(
                 val response = chatJson(
                     system = "你是学生学习教练。只返回 JSON，不要 markdown。",
                     user = """
-                        基于当前笔记和关联笔记生成一张认知回流卡。
+                        基于“当前笔记”生成一张认知回流卡。
+                        关键约束：
+                        1. 题目必须围绕当前笔记的标题或核心概念，不得把多张卡片混成一个新主题。
+                        2. 关联笔记只允许作为一个轻量对比/补充线索；如果关联笔记为空，就只围绕当前笔记出题。
+                        3. 不要追问关联笔记本身的知识点，不要要求同时解释多个无关概念。
                         优先出联系、对比、因果、迁移类问题，不要纯事实背诵题。
                         返回 JSON:
                         {
@@ -233,12 +239,15 @@ class RemoteBlueLMAdapter(
                           "card_type":"relation|contrast|cause_transfer"
                         }
                         relationHint=$relationHint
+                        current_title=${current.sourceTitle}
                         current=${current.noteContent}
-                        related=${related.joinToString("\n") { it.noteContent }}
+                        related_optional=${related.joinToString("\n") { "${it.sourceTitle}: ${it.noteContent.take(260)}" }}
                     """.trimIndent()
                 )
                 ReviewCardDraft(
-                    question = response.optString("question").ifBlank { "这条内容能补充你哪一条旧知识？" },
+                    question = response.optString("question")
+                        .ifBlank { "请用一句话说清它的核心知识点，并给一个应用例子。" }
+                        .anchorToCurrentNote(current),
                     explanation = response.optString("explanation").ifBlank { "先说出联系，再解释为什么重要。" },
                     difficulty = response.optString("difficulty").ifBlank { "medium" },
                     cardType = response.optString("card_type").ifBlank { "relation" }
@@ -450,14 +459,18 @@ class RemoteBlueLMAdapter(
         return postJson(config.chat, path, payload)
     }
 
-    private fun responsesPayload(text: String, imageDataUrl: String? = null): JSONObject {
+    private fun responsesPayload(
+        text: String,
+        imageDataUrl: String? = null,
+        model: String = config.chat.model
+    ): JSONObject {
         val content = JSONArray()
         if (!imageDataUrl.isNullOrBlank()) {
             content.put(JSONObject().put("type", "input_image").put("image_url", imageDataUrl))
         }
         content.put(JSONObject().put("type", "input_text").put("text", text))
         return JSONObject()
-            .put("model", config.chat.model)
+            .put("model", model)
             .put("input", JSONArray().put(JSONObject().put("role", "user").put("content", content)))
     }
 
@@ -652,4 +665,10 @@ private fun JSONArray?.toScenes(): List<AnimationScene> {
             )
         }
     }
+}
+
+private fun String.anchorToCurrentNote(current: NoteEntity): String {
+    val anchor = (current.topic ?: current.sourceTitle).trim().take(18)
+    if (anchor.isBlank() || contains(anchor)) return this
+    return "围绕「$anchor」：$this"
 }
