@@ -74,12 +74,23 @@ class FloatingCaptureService : Service() {
         }
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END
         }
-        val paste = Button(this).apply { text = "\u7c98\u8d34" }
-        val save = Button(this).apply { text = "\u5b58\u5165" }
-        val collapse = Button(this).apply { text = "\u6536\u8d77" }
-        val back = Button(this).apply { text = "\u8fd4\u56de" }
+        val paste = Button(this).apply {
+            text = "\u7c98\u8d34"
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(6) }
+        }
+        val save = Button(this).apply {
+            text = "\u5b58\u5165"
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(6) }
+        }
+        val collapse = Button(this).apply {
+            text = "\u6536\u8d77"
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(6) }
+        }
+        val back = Button(this).apply {
+            text = "\u8fd4\u56de"
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
         listOf(paste, save, collapse, back).forEach { row.addView(it) }
         root.addView(header)
         root.addView(state)
